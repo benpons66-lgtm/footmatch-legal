@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "autoPort": true,
+  "configurations": [
+    {
+      "name": "footmatch-web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["start-web.js"],
+      "port": 8082
+    }
+  ]
+}

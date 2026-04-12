@@ -1,0 +1,148 @@
+{
+  "expo": {
+    "name": "FootMatch",
+    "slug": "footmatch",
+    "version": "1.0.0",
+    "runtimeVersion": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+
+    "primaryColor": "#00FF66",
+
+    "description": "Trouve un match de football en 30 secondes",
+
+    "keywords": [
+      "football", "foot", "match", "amateur", "five", "sport", "joueurs", "terrain"
+    ],
+
+    "privacy": "public",
+    "privacyPolicyUrl": "https://footmatch.fr/privacy-policy",
+
+    "platforms": ["ios", "android", "web"],
+
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "fr.footmatch.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "FootMatch utilise ta position pour trouver les matchs et terrains les plus proches de toi.",
+        "NSCameraUsageDescription": "FootMatch utilise la caméra pour te permettre de prendre une photo de profil ou de proposer un terrain.",
+        "NSPhotoLibraryUsageDescription": "FootMatch accède à tes photos pour te permettre de choisir une photo de profil ou d'ajouter une photo de terrain.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePreciseLocation",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePhotosOrVideos",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+          }
+        ],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          }
+        ]
+      }
+    },
+
+    "android": {
+      "package": "fr.footmatch.app",
+      "versionCode": 1,
+      "targetSdkVersion": 35,
+      "compileSdkVersion": 35,
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ],
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "RECORD_AUDIO"
+      ]
+    },
+
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "FootMatch utilise ta position pour trouver les matchs et terrains les plus proches de toi.",
+          "locationWhenInUsePermission": "FootMatch utilise ta position pour trouver les matchs et terrains les plus proches de toi."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FootMatch accède à tes photos pour te permettre de choisir une photo de profil ou d'ajouter une photo de terrain.",
+          "cameraPermission": "FootMatch utilise la caméra pour te permettre de prendre une photo de profil ou de proposer un terrain."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00FF66",
+          "sounds": []
+        }
+      ]
+    ],
+
+    "extra": {
+      "eas": {
+        "projectId": "footmatch-app"
+      }
+    },
+
+    "owner": "footmatch",
+
+    "updates": {
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/footmatch-app"
+    },
+
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}

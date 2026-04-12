@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|HACK\\\\|XXX\\\\|BUG\" /c/Users/lenovo/Documents/footmatch --include=*.tsx --include=*.ts)",
+      "Bash(grep -r \"const.*=.*password\\\\|const.*=.*key\\\\|const.*=.*secret\\\\|hardcoded\" /c/Users/lenovo/Documents/footmatch --include=*.tsx --include=*.ts)",
+      "Bash(xargs wc:*)",
+      "Bash(grep -r \"console.log\\\\|console.error\\\\|console.warn\" /c/Users/lenovo/Documents/footmatch --include=*.tsx --include=*.ts)",
+      "Bash(grep -r any[ /c/Users/lenovo/Documents/footmatch --include=*.tsx --include=*.ts)",
+      "Bash(grep -r 'as any' /c/Users/lenovo/Documents/footmatch --include=*.tsx --include=*.ts)",
+      "Bash(wc -l /c/Users/lenovo/Documents/footmatch/components/*.tsx)",
+      "Bash(wc -l /c/Users/lenovo/Documents/footmatch/screens/*.tsx)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(file /c/Users/lenovo/Documents/footmatch/assets/*.png)",
+      "Bash(npm list:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|sql\\)$\")",
+      "Bash(npx eslint:*)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(node_modules/.bin/eslint screens/CompetitionsScreen.tsx screens/TeamDetailScreen.tsx screens/CupDetailScreen.tsx)",
+      "Bash(echo \"DONE:$?\")",
+      "Bash(node_modules/.bin/eslint App.tsx)",
+      "Bash(node_modules/.bin/eslint screens/CompetitionsScreen.tsx)",
+      "Bash(node_modules/.bin/eslint screens/PlayersScreen.tsx)",
+      "Bash(grep -r \"PlayerCard\\\\|CardGallery\\\\|CARD_\" \"/c/Users/lenovo/Documents/footmatch\" --include=\"*.tsx\" --include=\"*.ts\" ! -path \"*/node_modules/*\")",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8082)",
+      "Read(//c/Users/lenovo/AppData/Local/Temp/claude/C--Users-lenovo-Documents-footmatch/25055150-6afa-4194-9c6a-bcf737103afb/tasks/**)",
+      "Bash(curl -s \"http://localhost:8082/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable\")",
+      "Bash(curl -s -I http://localhost:8082/)",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\" \"http://localhost:8082/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable\")",
+      "Bash(grep -r \"export.*useStore\\\\|export.*const.*store\" /c/Users/lenovo/Documents/footmatch --include=\"*.ts\" --include=\"*.tsx\" ! -path \"*/node_modules/*\")",
+      "Bash(ls /c/Users/lenovo/Documents/footmatch/*.ts)",
+      "Bash(grep -r \"export type AppUser\\\\|export interface AppUser\" /c/Users/lenovo/Documents/footmatch --include=*.ts --include=*.tsx 2)",
+      "Bash(/dev/null ! -path */node_modules/*)",
+      "Bash(find /c/Users/lenovo/Documents/footmatch -name types.* -maxdepth 2 ! -path */node_modules/* -o -name index.ts -maxdepth 2 ! -path */node_modules/*)",
+      "Bash(grep -r \"MOCK_MATCHES\\\\|hardcoded.*match\\\\|const.*match.*=\" /c/Users/lenovo/Documents/footmatch/*.tsx /c/Users/lenovo/Documents/footmatch/*.ts)"
+    ]
+  }
+}
