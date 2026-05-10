@@ -506,7 +506,10 @@ export default function App() {
   }
 
   const searchRef = useRef<TextInput>(null);
-  const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false });
+  const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', venueName:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true });
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [calMonth, setCalMonth] = useState(new Date());
 
   // ── Effects (déclarés AVANT tout early return — règle des hooks React) ──────
 
@@ -1041,30 +1044,29 @@ export default function App() {
 
   async function handleCreateMatch() {
     if (!form.title.trim()) { Alert.alert('Erreur','Donne un nom au match'); return; }
-    if (!form.venueId) { Alert.alert('Erreur','Choisis un terrain'); return; }
+    if (!form.venueName.trim()) { Alert.alert('Erreur','Indique le nom du terrain'); return; }
     if (!form.date||!form.time) { Alert.alert('Erreur','Choisis une date et heure'); return; }
     if (parseInt(form.maxPlayers) < 2) { Alert.alert('Erreur','Il faut au moins 2 joueurs'); return; }
     if (!ensureCleanContent(form.title, 'ce titre')) return;
     if (form.description.trim() && !ensureCleanContent(form.description, 'cette description')) return;
-    const scheduledAt = new Date(`${form.date}T${form.time}:00`).toISOString();
-    if (isNaN(new Date(scheduledAt).getTime())) { Alert.alert('Erreur','Format de date invalide (JJ/MM/AAAA HH:MM)'); return; }
-    if (new Date(scheduledAt) <= new Date()) { Alert.alert('Erreur','La date doit être dans le futur'); return; }
+    const parsed = parseFrenchDateToDate(form.date, form.time);
+    if (!parsed || isNaN(parsed.getTime())) { Alert.alert('Erreur','Format de date invalide (JJ/MM/AAAA HH:MM)'); return; }
+    if (parsed <= new Date()) { Alert.alert('Erreur','La date doit être dans le futur'); return; }
     setLoading(true);
     try {
       const { data, error } = await supabase.from('matches').insert({
-        title:form.title.trim(), type:form.type, venue_id:form.venueId,
-        organizer_id:currentUser!.id, scheduled_at:scheduledAt,
+        title:form.title.trim(), type:form.type, venue_id:null,
+        organizer_id:currentUser!.id, scheduled_at:parsed.toISOString(),
         max_players:parseInt(form.maxPlayers), current_players:1,
-        price_per_player:Math.max(0, parseInt(form.price) || 0), level:'Tous niveaux',
-        description:form.description, is_private:form.isPrivate, status:'open',
+        price_per_player:form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0), level:'Tous niveaux',
+        description:form.description, is_private:false, status:'open',
       }).select().single();
       if (error) throw error;
       await supabase.from('match_players').insert({ match_id:data.id, user_id:currentUser!.id, status:'confirmed' });
       scheduleMatchReminder(data.title, new Date(data.scheduled_at), data.id, true);
       setMyMatches(prev => [...prev, data.id]);
       Alert.alert('🎉 Match créé !','Ton match est en ligne !');
-      setForm({ title:'', type:'five', venueId:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false });
-      setVenueSearch('');
+      setForm({ title:'', type:'five', venueId:'', venueName:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true });
       setScreen('home'); loadMatches();
     } catch (e:any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
@@ -1801,21 +1803,28 @@ export default function App() {
         </View>
         <ScrollView showsVerticalScrollIndicator={false}>
 
-          {/* Header profil — Carte FootMatch en mini */}
+          {/* Carte pleine largeur — même rendu que PlayerProfileScreen */}
+          <View style={{ alignItems: 'center', paddingTop: Spacing.xl, paddingBottom: Spacing.lg }}>
+            <PlayerCard
+              pseudo={currentUser?.pseudo ?? 'Joueur'}
+              rank={getAutoLevel(currentUser?.reputation_score ?? 0)}
+              score={currentUser?.reputation_score ?? 0}
+              stats={{
+                matchesPlayed:    myMatches.length,
+                matchesOrganized: myCreatedMatches.length,
+                avgRating:        avgRating ? parseFloat(avgRating) : null,
+                ratingsGiven:     ratedCount,
+                noShows:          0,
+                goals:            parseInt(personalStatsDraft.goals   || '0', 10) || 0,
+                assists:          parseInt(personalStatsDraft.assists  || '0', 10) || 0,
+                skill:            userSkill ?? null,
+              }}
+              avatarId={userAvatar}
+            />
+          </View>
+
+          {/* Infos sous la carte */}
           <View style={s.profileHeader}>
-            <TouchableOpacity onPress={() => setScreen('card' as any)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Voir ma carte joueur">
-              <PlayerCard
-                pseudo={currentUser?.pseudo ?? 'Joueur'}
-                rank={getAutoLevel(currentUser?.reputation_score ?? 0)}
-                score={currentUser?.reputation_score ?? 0}
-                stats={{ matchesPlayed:myMatches.length, matchesOrganized:myCreatedMatches.length, avgRating:null, ratingsGiven:Object.keys(myRatings).length, noShows:0 }}
-                avatarId={userAvatar}
-                size="mini"
-              />
-              <Text style={{ fontSize:10, color:Colors.textMuted, textAlign:'center', marginTop:6 }}>
-                Appuie pour voir ta carte →
-              </Text>
-            </TouchableOpacity>
             <Text style={s.profileName}>{currentUser?.pseudo}</Text>
             <Text style={s.profileEmail}>{currentUser?.email}</Text>
             <TouchableOpacity
@@ -2123,322 +2132,399 @@ export default function App() {
 
   // ── CRÉER MATCH ───────────────────────────────────────────────────────────────
   if (screen === 'create') {
-    const cfg = MATCH_TYPES[form.type];
     const today = new Date();
-    const QUICK_DATES = Array.from({length: 6}, (_, i) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
+    const QUICK_DATES = Array.from({length:7}, (_,i) => {
+      const d = new Date(today); d.setDate(today.getDate()+i);
       const val = formatFrenchDate(d);
-      const label = i === 0 ? "Auj." : i === 1 ? "Demain" : d.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric'});
+      const label = i===0?'Auj.':i===1?'Demain':d.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric'});
       return { val, label };
     });
     const QUICK_TIMES = ['17:00','18:00','19:00','20:00','21:00','22:00'];
-    const communityValidatedVenues = proposals
-      .filter((proposal: any) => proposal.status === 'validated' && proposal.validated_venue_id && Array.isArray(proposal.types) && proposal.types.includes(form.type))
-      .map((proposal: any) => ({
-        id: proposal.validated_venue_id,
-        name: proposal.name,
-        city: proposal.city,
-        address: proposal.address,
-        types: proposal.types,
-        source: 'community',
-      }));
-    const rawVenuePool = form.type === 'five'
-      ? venues.filter((v) => Array.isArray(v.types) && v.types.includes('five'))
-      : communityValidatedVenues;
-    const filteredVenues = rawVenuePool.filter((v: any) => {
-      const haystack = [v.name, v.city, v.address].map((value) => String(value ?? '').toLowerCase());
-      const q = venueSearch.toLowerCase();
-      return !q || haystack.some((value) => value.includes(q));
-    });
+
+    // ── Icônes terrain neon (View-based) ────────────────────────────────────
+    const PITCH_W = (width - 32 - 20) / 3;
+    const PITCH_H = PITCH_W * (54/76);
+    const pitchColor = (t:'five'|'city'|'eleven') =>
+      form.type===t ? ({five:'#00FF87',city:'#4FFFEF',eleven:'#FFFFFF'}[t]) : 'rgba(255,255,255,0.2)';
+
+    const PitchFive = () => {
+      const c=pitchColor('five'); const cw=PITCH_W; const ch=PITCH_H; const circR=ch*0.27;
+      return (
+        <View style={{width:cw,height:ch,borderWidth:1.8,borderColor:c,borderRadius:6}}>
+          <View style={{position:'absolute',top:0,bottom:0,left:cw/2-0.7,width:1.4,backgroundColor:c}}/>
+          <View style={{position:'absolute',width:circR*2,height:circR*2,borderRadius:circR,borderWidth:1.4,borderColor:c,top:ch/2-circR,left:cw/2-circR}}/>
+          <View style={{position:'absolute',width:4,height:4,borderRadius:2,backgroundColor:c,top:ch/2-2,left:cw/2-2}}/>
+          <View style={{position:'absolute',top:ch*0.3,height:ch*0.4,left:0,width:cw*0.16,borderRightWidth:1.2,borderTopWidth:1.2,borderBottomWidth:1.2,borderColor:c}}>
+            <View style={{position:'absolute',top:0,bottom:0,left:'35%',width:0.8,backgroundColor:c,opacity:0.6}}/>
+            <View style={{position:'absolute',top:0,bottom:0,left:'68%',width:0.8,backgroundColor:c,opacity:0.6}}/>
+            <View style={{position:'absolute',left:0,right:0,top:'33%',height:0.8,backgroundColor:c,opacity:0.6}}/>
+            <View style={{position:'absolute',left:0,right:0,top:'66%',height:0.8,backgroundColor:c,opacity:0.6}}/>
+          </View>
+          <View style={{position:'absolute',top:ch*0.3,height:ch*0.4,right:0,width:cw*0.16,borderLeftWidth:1.2,borderTopWidth:1.2,borderBottomWidth:1.2,borderColor:c}}>
+            <View style={{position:'absolute',top:0,bottom:0,left:'32%',width:0.8,backgroundColor:c,opacity:0.6}}/>
+            <View style={{position:'absolute',top:0,bottom:0,left:'65%',width:0.8,backgroundColor:c,opacity:0.6}}/>
+            <View style={{position:'absolute',left:0,right:0,top:'33%',height:0.8,backgroundColor:c,opacity:0.6}}/>
+            <View style={{position:'absolute',left:0,right:0,top:'66%',height:0.8,backgroundColor:c,opacity:0.6}}/>
+          </View>
+        </View>
+      );
+    };
+
+    const PitchCity = () => {
+      const c=pitchColor('city'); const cw=PITCH_W; const ch=PITCH_H; const circR=ch*0.27;
+      return (
+        <View style={{width:cw,height:ch,borderWidth:1.8,borderColor:c,borderRadius:10}}>
+          <View style={{position:'absolute',top:0,bottom:0,left:cw/2-0.7,width:1.4,backgroundColor:c}}/>
+          <View style={{position:'absolute',width:circR*2,height:circR*2,borderRadius:circR,borderWidth:1.4,borderColor:c,top:ch/2-circR,left:cw/2-circR}}/>
+          <View style={{position:'absolute',width:4,height:4,borderRadius:2,backgroundColor:c,top:ch/2-2,left:cw/2-2}}/>
+          <View style={{position:'absolute',top:ch*0.22,height:ch*0.56,left:0,width:cw*0.3,borderTopRightRadius:999,borderBottomRightRadius:999,borderRightWidth:1.3,borderTopWidth:1.3,borderBottomWidth:1.3,borderColor:c}}/>
+          <View style={{position:'absolute',width:3,height:3,borderRadius:1.5,backgroundColor:c,top:ch/2-1.5,left:cw*0.2}}/>
+          <View style={{position:'absolute',top:ch*0.22,height:ch*0.56,right:0,width:cw*0.3,borderTopLeftRadius:999,borderBottomLeftRadius:999,borderLeftWidth:1.3,borderTopWidth:1.3,borderBottomWidth:1.3,borderColor:c}}/>
+          <View style={{position:'absolute',width:3,height:3,borderRadius:1.5,backgroundColor:c,top:ch/2-1.5,right:cw*0.2}}/>
+        </View>
+      );
+    };
+
+    const PitchEleven = () => {
+      const c=pitchColor('eleven'); const cw=PITCH_W; const ch=PITCH_H; const circR=ch*0.26;
+      return (
+        <View style={{width:cw,height:ch,borderWidth:1.8,borderColor:c,borderRadius:3}}>
+          <View style={{position:'absolute',top:0,bottom:0,left:cw/2-0.7,width:1.4,backgroundColor:c}}/>
+          <View style={{position:'absolute',width:circR*2,height:circR*2,borderRadius:circR,borderWidth:1.3,borderColor:c,top:ch/2-circR,left:cw/2-circR}}/>
+          <View style={{position:'absolute',width:3.5,height:3.5,borderRadius:2,backgroundColor:c,top:ch/2-1.75,left:cw/2-1.75}}/>
+          <View style={{position:'absolute',top:ch*0.24,height:ch*0.52,left:0,width:cw*0.22,borderRightWidth:1.2,borderTopWidth:1.2,borderBottomWidth:1.2,borderColor:c}}/>
+          <View style={{position:'absolute',top:ch*0.38,height:ch*0.24,left:0,width:cw*0.09,borderRightWidth:1,borderTopWidth:1,borderBottomWidth:1,borderColor:c}}/>
+          <View style={{position:'absolute',width:3,height:3,borderRadius:1.5,backgroundColor:c,top:ch/2-1.5,left:cw*0.18}}/>
+          <View style={{position:'absolute',top:ch*0.24,height:ch*0.52,right:0,width:cw*0.22,borderLeftWidth:1.2,borderTopWidth:1.2,borderBottomWidth:1.2,borderColor:c}}/>
+          <View style={{position:'absolute',top:ch*0.38,height:ch*0.24,right:0,width:cw*0.09,borderLeftWidth:1,borderTopWidth:1,borderBottomWidth:1,borderColor:c}}/>
+          <View style={{position:'absolute',width:3,height:3,borderRadius:1.5,backgroundColor:c,top:ch/2-1.5,right:cw*0.18}}/>
+        </View>
+      );
+    };
+
+    // ── Calendrier ───────────────────────────────────────────────────────────
+    const MONTH_FR=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const DAY_FR=['Lu','Ma','Me','Je','Ve','Sa','Di'];
+    const calYear=calMonth.getFullYear(); const calMo=calMonth.getMonth();
+    const firstDow=(()=>{const d=new Date(calYear,calMo,1).getDay();return d===0?6:d-1;})();
+    const daysInMonth=new Date(calYear,calMo+1,0).getDate();
+    const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
+    const calDays:Array<{day:number|null,date:Date|null,isPast:boolean}>=[];
+    for(let i=0;i<firstDow;i++) calDays.push({day:null,date:null,isPast:false});
+    for(let d=1;d<=daysInMonth;d++){const dt=new Date(calYear,calMo,d);calDays.push({day:d,date:dt,isPast:dt<todayMidnight});}
+
+    const formatFrenchDateFromDate=(d:Date)=>{
+      const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); const yyyy=d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+    const formatDateDisplay=(dateStr:string)=>{
+      if(!dateStr) return 'Sélectionner';
+      const p=dateStr.split('/');
+      if(p.length!==3) return dateStr;
+      const d=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
+      if(isNaN(d.getTime())) return dateStr;
+      const days=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+      const months=['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+      return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+    };
+
+    const typeColors:{[k in 'five'|'city'|'eleven']:{active:string,dim:string,border:string}}={
+      five:  {active:'#00FF87',dim:'rgba(0,255,135,0.08)',border:'rgba(0,255,135,0.5)'},
+      city:  {active:'#4FFFEF',dim:'rgba(79,255,239,0.08)',border:'rgba(79,255,239,0.5)'},
+      eleven:{active:'#FFFFFF',dim:'rgba(255,255,255,0.06)',border:'rgba(255,255,255,0.35)'},
+    };
 
     return (
       <ScrollView style={s.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <StatusBar barStyle="light-content" />
 
-        {/* ── HEADER ── */}
-        <View style={s.createHeader}>
-          <TouchableOpacity style={s.createBackBtn} onPress={() => setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour">
-            <Ionicons name="chevron-back" size={22} color={Colors.green} />
+        {/* ── Header ── */}
+        <View style={cs.header}>
+          <TouchableOpacity style={cs.backBtn} onPress={()=>setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour">
+            <Ionicons name="chevron-back" size={20} color={Colors.green}/>
           </TouchableOpacity>
-          <View style={s.createHeaderCenter}>
-            <Text style={s.createHeroTitle}>
-              Organise ton <Text style={{color: Colors.green}}>match</Text> ⚽
-            </Text>
-            <Text style={s.createHeroSub}>CONFIGURE · PUBLIE · JOUE</Text>
-          </View>
-          <View style={{width: 40}} />
+          <Text style={cs.headerBadge}>Nouveau match</Text>
+          <View style={{width:38}}/>
         </View>
 
-        <View style={s.createBody}>
+        {/* ── Hero ── */}
+        <View style={cs.hero}>
+          <Text style={cs.heroEyebrow}>FootMatch</Text>
+          <Text style={cs.heroTitle}>Organise ton{'\n'}<Text style={cs.heroGreen}>match ⚽</Text></Text>
+          <Text style={cs.heroSub}>Configure · Publie · Joue</Text>
+        </View>
 
-          {/* ── ÉTAPE 1 : FORMAT ── */}
-          <View style={s.createStepRow}>
-            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>1</Text></View>
-            <Text style={s.createStepLabel}>Format du match</Text>
-          </View>
-          <View style={s.typeRow}>
-            {(Object.keys(MATCH_TYPES) as ('five'|'city'|'eleven')[]).map((t) => {
-              const c = MATCH_TYPES[t];
-              const iconColor = form.type === t ? c.color : Colors.textMuted;
-              return (
-                <TouchableOpacity
-                  key={t}
-                  style={[s.typeBtn, form.type === t && {borderColor: c.color, backgroundColor: c.dimColor}]}
-                  onPress={() => { setShowVenuePicker(false); setForm(f => ({...f, type: t, venueId:'', maxPlayers: String(c.maxPlayers),
-                    title: f.title === '' || Object.values(MATCH_TYPES).some(mt => f.title === `${mt.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}`) ? `${c.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}` : f.title
-                  })); }}
-                  accessibilityRole="radio" accessibilityLabel={c.label} accessibilityState={{ selected: form.type === t }}
-                >
-                  {t === 'five' ? (
-                    <View style={{ width: 46, height: 34, borderWidth: 2, borderColor: iconColor, borderRadius: 4, overflow: 'hidden' }}>
-                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 22, width: 1.5, backgroundColor: iconColor, opacity: 0.7 }} />
-                      <View style={{ position: 'absolute', top: 9, left: 17, width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: iconColor, opacity: 0.6 }} />
-                      <View style={{ position: 'absolute', top: 8, bottom: 8, left: 0, width: 7, borderRightWidth: 1.5, borderRightColor: iconColor, opacity: 0.5 }} />
-                      <View style={{ position: 'absolute', top: 8, bottom: 8, right: 0, width: 7, borderLeftWidth: 1.5, borderLeftColor: iconColor, opacity: 0.5 }} />
-                    </View>
-                  ) : t === 'city' ? (
-                    <View style={{ width: 42, height: 28, borderWidth: 2, borderColor: iconColor, borderRadius: 2, overflow: 'hidden' }}>
-                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 20, width: 1.5, backgroundColor: iconColor, opacity: 0.7 }} />
-                      <View style={{ position: 'absolute', top: 7, bottom: 7, left: 0, width: 8, borderRightWidth: 1.5, borderRightColor: iconColor, opacity: 0.5 }} />
-                      <View style={{ position: 'absolute', top: 7, bottom: 7, right: 0, width: 8, borderLeftWidth: 1.5, borderLeftColor: iconColor, opacity: 0.5 }} />
-                    </View>
-                  ) : (
-                    <View style={{ width: 46, height: 28, borderWidth: 2, borderColor: iconColor, borderRadius: 2, overflow: 'hidden' }}>
-                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 22, width: 1.5, backgroundColor: iconColor, opacity: 0.7 }} />
-                      <View style={{ position: 'absolute', top: 9, left: 18, width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: iconColor, opacity: 0.6 }} />
-                      <View style={{ position: 'absolute', top: 6, bottom: 6, left: 0, width: 10, borderRightWidth: 1.5, borderRightColor: iconColor, opacity: 0.5 }} />
-                      <View style={{ position: 'absolute', top: 6, bottom: 6, right: 0, width: 10, borderLeftWidth: 1.5, borderLeftColor: iconColor, opacity: 0.5 }} />
-                    </View>
-                  )}
-                  <Text style={[s.typeBtnLabel, form.type === t && {color: c.color}]}>{c.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+        <View style={cs.body}>
 
-          {/* ── ÉTAPE 2 : NOM ── */}
-          <View style={s.createStepRow}>
-            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>2</Text></View>
-            <Text style={s.createStepLabel}>Nom du match</Text>
-          </View>
-          <View style={s.createInputRow}>
-            <Ionicons name="create-outline" size={18} color={Colors.textMuted} />
-            <TextInput
-              style={s.createInput}
-              value={form.title}
-              onChangeText={v => setForm(f => ({...f, title: v}))}
-              placeholder={`Ex: ${cfg.label} du jeudi`}
-              placeholderTextColor={Colors.textMuted}
-            />
-          </View>
-
-          {/* ── ÉTAPE 3 : DATE & HEURE ── */}
-          <View style={s.createStepRow}>
-            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>3</Text></View>
-            <Text style={s.createStepLabel}>Date & Heure</Text>
-          </View>
-
-          {/* Dates rapides */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 10}}>
-            <View style={{flexDirection:'row', gap:8, paddingHorizontal:2}}>
-              {QUICK_DATES.map(d => (
-                <TouchableOpacity
-                  key={d.val}
-                  style={[s.quickPill, form.date === d.val && s.quickPillActive]}
-                  onPress={() => setForm(f => ({...f, date: d.val}))}
-                  accessibilityRole="radio" accessibilityLabel={d.label} accessibilityState={{ selected: form.date === d.val }}
-                >
-                  <Text style={[s.quickPillText, form.date === d.val && s.quickPillTextActive]}>{d.label}</Text>
-                </TouchableOpacity>
-              ))}
+          {/* ── 1. Format ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>1</Text></View>
+              <Text style={cs.sectionLabel}>Format du match</Text>
             </View>
-          </ScrollView>
-
-          {/* Heures rapides */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 12}}>
-            <View style={{flexDirection:'row', gap:8, paddingHorizontal:2}}>
-              {QUICK_TIMES.map(t => (
-                <TouchableOpacity
-                  key={t}
-                  style={[s.quickPill, form.time === t && s.quickPillActive]}
-                  onPress={() => setForm(f => ({...f, time: t}))}
-                  accessibilityRole="radio" accessibilityLabel={`Heure ${t}`} accessibilityState={{ selected: form.time === t }}
-                >
-                  <Text style={[s.quickPillText, form.time === t && s.quickPillTextActive]}>{t}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={{flexDirection:'row',gap:10}}>
+              {(['five','city','eleven'] as const).map(t=>{
+                const isActive=form.type===t; const tc=typeColors[t];
+                return (
+                  <TouchableOpacity key={t}
+                    style={[cs.formatCard,isActive&&{borderColor:tc.border,backgroundColor:tc.dim,shadowColor:tc.active,shadowOpacity:0.2,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:4}]}
+                    onPress={()=>setForm(f=>({...f,type:t,venueId:'',maxPlayers:String(MATCH_TYPES[t].maxPlayers),
+                      title:f.title===''||Object.values(MATCH_TYPES).some(mt=>f.title===`${mt.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}`) ? `${MATCH_TYPES[t].label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}`:f.title
+                    }))}
+                    accessibilityRole="radio" accessibilityLabel={MATCH_TYPES[t].label} accessibilityState={{selected:isActive}}>
+                    {t==='five'&&<PitchFive/>}
+                    {t==='city'&&<PitchCity/>}
+                    {t==='eleven'&&<PitchEleven/>}
+                    <Text style={[cs.formatName,isActive&&{color:tc.active}]}>{t==='five'?'Five':t==='city'?'City':'Foot à 11'}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          </ScrollView>
+          </View>
 
-          {/* Pickers date / heure — affichage + saisie manuelle dessous */}
-          <View style={{flexDirection:'row', gap:10, marginBottom:10}}>
-            <View style={s.createPickerBtn}>
-              <Text style={s.createPickerIcon}>📅</Text>
+          {/* ── 2. Nom ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>2</Text></View>
+              <Text style={cs.sectionLabel}>Nom du match</Text>
+            </View>
+            <View style={cs.inputBox}>
+              <Ionicons name="create-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
+              <TextInput style={cs.inputField} value={form.title} onChangeText={v=>setForm(f=>({...f,title:v}))}
+                placeholder="Ex : Mercredi Fire 🔥" placeholderTextColor={Colors.textMuted} maxLength={40}/>
+            </View>
+          </View>
+
+          {/* ── 3. Date & Heure ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>3</Text></View>
+              <Text style={cs.sectionLabel}>Date &amp; Heure</Text>
+            </View>
+            {/* Chips dates */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:10}}>
+              <View style={{flexDirection:'row',gap:8,paddingHorizontal:2}}>
+                {QUICK_DATES.map(d=>(
+                  <TouchableOpacity key={d.val} style={[cs.chip,form.date===d.val&&cs.chipOn]} onPress={()=>setForm(f=>({...f,date:d.val}))}>
+                    <Text style={[cs.chipText,form.date===d.val&&cs.chipTextOn]}>{d.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            {/* Chips heures */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:12}}>
+              <View style={{flexDirection:'row',gap:8,paddingHorizontal:2}}>
+                {QUICK_TIMES.map(t=>(
+                  <TouchableOpacity key={t} style={[cs.chip,form.time===t&&cs.chipOn]} onPress={()=>setForm(f=>({...f,time:t}))}>
+                    <Text style={[cs.chipText,form.time===t&&cs.chipTextOn]}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            {/* Cartes calendrier + horloge */}
+            <View style={{flexDirection:'row',gap:10,marginBottom:10}}>
+              <TouchableOpacity style={[cs.dtCard,!!form.date&&cs.dtCardFilled]} onPress={()=>setShowDateModal(true)}>
+                <Text style={cs.dtTag}>📅  Date</Text>
+                <Text style={[cs.dtVal,!form.date&&cs.dtValEmpty]}>{form.date?formatDateDisplay(form.date):'Sélectionner'}</Text>
+                <Text style={cs.dtChevron}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[cs.dtCard,!!form.time&&cs.dtCardFilled]} onPress={()=>setShowTimeModal(true)}>
+                <Text style={cs.dtTag}>🕐  Heure</Text>
+                <Text style={[cs.dtVal,!form.time&&cs.dtValEmpty]}>{form.time||'Sélectionner'}</Text>
+                <Text style={cs.dtChevron}>›</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Saisie manuelle */}
+            <View style={cs.inputBox}>
+              <Text style={cs.manualLabel}>JJ/MM/AAAA</Text>
+              <TextInput style={cs.inputField} value={form.date} onChangeText={v=>{
+                let c=v.replace(/\D/g,'');
+                if(c.length>2) c=c.slice(0,2)+'/'+c.slice(2);
+                if(c.length>5) c=c.slice(0,5)+'/'+c.slice(5);
+                setForm(f=>({...f,date:c}));
+              }} placeholder="03/05/2026" placeholderTextColor={Colors.textMuted} keyboardType="numeric" maxLength={10}/>
+            </View>
+            <View style={[cs.inputBox,{marginTop:10}]}>
+              <Text style={cs.manualLabel}>HH:MM</Text>
+              <TextInput style={cs.inputField} value={form.time} onChangeText={v=>{
+                let c=v.replace(/\D/g,'');
+                if(c.length>2) c=c.slice(0,2)+':'+c.slice(2);
+                setForm(f=>({...f,time:c}));
+              }} placeholder="20:00" placeholderTextColor={Colors.textMuted} keyboardType="numeric" maxLength={5}/>
+            </View>
+          </View>
+
+          {/* ── 4. Terrain ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>4</Text></View>
+              <Text style={cs.sectionLabel}>Terrain / Stade</Text>
+            </View>
+            <View style={cs.pitchMini}>
+              <Text style={cs.pitchMiniLabel}>📍  Localisation du match</Text>
+              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)'}]}>
+                <Ionicons name="location-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
+                <TextInput style={cs.inputField} value={form.venueName} onChangeText={v=>setForm(f=>({...f,venueName:v}))}
+                  placeholder="Nom du complexe, stade, gymnase…" placeholderTextColor={Colors.textMuted}/>
+              </View>
+            </View>
+          </View>
+
+          {/* ── 5. Joueurs ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>5</Text></View>
+              <Text style={cs.sectionLabel}>Joueurs maximum</Text>
+            </View>
+            <View style={cs.playersWidget}>
               <View style={{flex:1}}>
-                <Text style={s.createPickerLabel}>Date</Text>
-                <Text style={s.createPickerSub}>{form.date || 'Sélectionner'}</Text>
+                <Text style={cs.playersNum}>{form.maxPlayers}</Text>
+                <Text style={cs.playersLabel}>joueurs max</Text>
+                <View style={cs.progressBar}>
+                  <View style={[cs.progressFill,{width:`${Math.min(100,(parseInt(form.maxPlayers)||0)/30*100)}%`}]}/>
+                </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-            </View>
-            <View style={s.createPickerBtn}>
-              <Text style={s.createPickerIcon}>⏰</Text>
-              <View style={{flex:1}}>
-                <Text style={s.createPickerLabel}>Heure</Text>
-                <Text style={s.createPickerSub}>{form.time || 'Sélectionner'}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-            </View>
-          </View>
-          <View style={{flexDirection:'row', gap:10, marginBottom: Spacing.lg}}>
-            <TextInput
-              style={[s.input, {flex:1, marginBottom:0}]}
-              value={form.date}
-              onChangeText={v => setForm(f => ({...f, date: v}))}
-              placeholder="JJ/MM/AA"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="numeric"
-            />
-            <TextInput
-              style={[s.input, {flex:1, marginBottom:0}]}
-              value={form.time}
-              onChangeText={v => setForm(f => ({...f, time: v}))}
-              placeholder="HH:MM"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="numeric"
-            />
-          </View>
-
-          {/* ── ÉTAPE 4 : TERRAIN ── */}
-          <View style={s.createStepRow}>
-            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>4</Text></View>
-            <Text style={s.createStepLabel}>Terrain / Stade</Text>
-          </View>
-          <Text style={{fontSize:12, color:Colors.textMuted, marginBottom:10}}>
-            {form.type === 'five'
-              ? 'Base officielle FootMatch : recherche par nom, ville ou adresse.'
-              : 'Pour le city et le foot à 11, seuls les terrains proposés puis validés par la communauté apparaissent ici.'}
-          </Text>
-          <View style={{ flexDirection:'row', gap:10, marginBottom:10 }}>
-            <TouchableOpacity
-              style={[s.btn, { flex:1, marginTop:0, paddingVertical:12 }]}
-              onPress={() => setShowVenuePicker((prev) => !prev)}
-              accessibilityRole="button" accessibilityLabel={showVenuePicker ? 'Fermer la liste des stades' : 'Choisir un stade'}
-            >
-              <Text style={s.btnText}>{showVenuePicker ? 'Fermer la liste' : 'Choisir un stade'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.venueOption, { flex:1, marginBottom:0, alignItems:'center', justifyContent:'center' }]}
-              onPress={() => {
-                setVenueForm((prev) => ({ ...prev, types: [form.type], name:'', address:'', city:'' }));
-                setScreen('propose_venue');
-              }}
-              accessibilityRole="button" accessibilityLabel="Proposer un nouveau stade"
-            >
-              <Text style={[s.venueName, { color: Colors.green }]}>+ Ajouter un stade</Text>
-              <Text style={s.venueCity}>Visible avant validation</Text>
-            </TouchableOpacity>
-          </View>
-          {form.venueId ? (
-            <View style={[s.venueOption, s.venueOptionActive]}>
-              <Text style={[s.venueName, {color: Colors.green}]}>{filteredVenues.find((v: any) => v.id === form.venueId)?.name ?? 'Stade sélectionné'}</Text>
-              <Text style={s.venueCity}>{filteredVenues.find((v: any) => v.id === form.venueId)?.city ?? 'Sélection active'}</Text>
-            </View>
-          ) : null}
-          {showVenuePicker && (
-            <>
-              <View style={{flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg2, borderRadius:Radius.md, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', paddingHorizontal:12, paddingVertical:8, marginBottom:8, gap:8}}>
-                <Ionicons name="search-outline" size={16} color={Colors.textMuted} />
-                <TextInput
-                  style={{flex:1, color:Colors.text, fontSize:14}}
-                  value={venueSearch}
-                  onChangeText={setVenueSearch}
-                  placeholder="Nom, ville ou adresse..."
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </View>
-              {filteredVenues.slice(0, 8).map((v) => (
-                <TouchableOpacity
-                  key={v.id}
-                  style={[s.venueOption, form.venueId === v.id && s.venueOptionActive]}
-                  onPress={() => { setForm(f => ({...f, venueId: v.id})); setShowVenuePicker(false); }}
-                  accessibilityRole="button" accessibilityLabel={`Sélectionner ${v.name}, ${v.city}`}
-                >
-                  <Text style={[s.venueName, form.venueId === v.id && {color: Colors.green}]}>{v.name}</Text>
-                  <Text style={s.venueCity}>{v.city}</Text>
+              <View style={{gap:8}}>
+                <TouchableOpacity style={cs.counterBtn} onPress={()=>setForm(f=>({...f,maxPlayers:String(Math.min(30,(parseInt(f.maxPlayers)||0)+1))}))}>
+                  <Text style={cs.counterBtnText}>+</Text>
                 </TouchableOpacity>
-              ))}
-            </>
-          )}
-          {filteredVenues.length === 0 && (
-            <View style={{padding:20, alignItems:'center'}}>
-              <Text style={{color:Colors.textMuted, fontSize:13}}>Aucun terrain trouvé — essaie un autre type de match</Text>
+                <TouchableOpacity style={cs.counterBtn} onPress={()=>setForm(f=>({...f,maxPlayers:String(Math.max(2,(parseInt(f.maxPlayers)||0)-1))}))}>
+                  <Text style={cs.counterBtnText}>−</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          )}
-
-          {/* ── ÉTAPE 5 : JOUEURS & PRIX ── */}
-          <View style={s.createStepRow}>
-            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>5</Text></View>
-            <Text style={s.createStepLabel}>Joueurs & Prix</Text>
           </View>
-          <View style={{flexDirection:'row', gap:10, marginBottom: Spacing.sm}}>
+
+          {/* ── 6. Tarif ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>6</Text></View>
+              <Text style={cs.sectionLabel}>Tarif par joueur</Text>
+            </View>
+            <View style={{flexDirection:'row',gap:10,marginBottom:12}}>
+              <TouchableOpacity style={[cs.priceOpt,form.isFree&&cs.priceOptOn]} onPress={()=>setForm(f=>({...f,isFree:true,price:''}))}>
+                <View style={[cs.priceRadio,form.isFree&&cs.priceRadioOn]}/>
+                <View>
+                  <Text style={[cs.priceOptTitle,form.isFree&&{color:Colors.green}]}>🆓 Gratuit</Text>
+                  <Text style={cs.priceOptSub}>Entrée libre</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={[cs.priceOpt,!form.isFree&&cs.priceOptOn]} onPress={()=>setForm(f=>({...f,isFree:false}))}>
+                <View style={[cs.priceRadio,!form.isFree&&cs.priceRadioOn]}/>
+                <View>
+                  <Text style={[cs.priceOptTitle,!form.isFree&&{color:Colors.green}]}>💶 Payant</Text>
+                  <Text style={cs.priceOptSub}>Coût partagé</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+            {!form.isFree&&(
+              <View style={[cs.inputBox,{borderColor:Colors.green,shadowColor:Colors.green,shadowOpacity:0.15,shadowRadius:8}]}>
+                <Text style={{fontSize:22,fontWeight:'900',color:Colors.green,marginRight:8}}>€</Text>
+                <TextInput style={[cs.inputField,{fontSize:22,fontWeight:'800'}]} value={form.price}
+                  onChangeText={v=>setForm(f=>({...f,price:v.replace(/[^0-9]/g,'')}))}
+                  keyboardType="number-pad" placeholder="0" placeholderTextColor={Colors.textMuted} returnKeyType="done"/>
+                <Text style={{fontSize:11,color:Colors.textMuted}}>par{'\n'}joueur</Text>
+              </View>
+            )}
+          </View>
+
+          {/* ── 7. Description ── */}
+          <View style={cs.section}>
+            <View style={cs.sectionHead}>
+              <View style={cs.sectionNum}><Text style={cs.sectionNumText}>7</Text></View>
+              <Text style={cs.sectionLabel}>Description (optionnel)</Text>
+            </View>
+            <View style={[cs.inputBox,{alignItems:'flex-start'}]}>
+              <TextInput style={[cs.inputField,{height:80,textAlignVertical:'top',paddingTop:2}]}
+                value={form.description} onChangeText={v=>setForm(f=>({...f,description:v}))}
+                placeholder="Niveau requis, équipement, règles…" placeholderTextColor={Colors.textMuted} multiline/>
+            </View>
+          </View>
+
+          {/* ── Match privé — bientôt ── */}
+          <View style={cs.soonCard}>
+            <View style={cs.soonIcon}><Text style={{fontSize:18}}>🔒</Text></View>
             <View style={{flex:1}}>
-              <Text style={s.fieldLabel}>Joueurs max</Text>
-              <TextInput
-                style={s.input}
-                value={form.maxPlayers}
-                onChangeText={v => setForm(f => ({...f, maxPlayers: v}))}
-                keyboardType="numeric"
-                placeholderTextColor={Colors.textMuted}
-              />
+              <Text style={cs.soonTitle}>Match privé</Text>
+              <Text style={cs.soonSub}>Accès par lien uniquement</Text>
             </View>
-            <View style={{flex:1}}>
-              <Text style={s.fieldLabel}>Prix / joueur (€)</Text>
-              <TextInput
-                style={s.input}
-                value={form.price}
-                onChangeText={v => setForm(f => ({...f, price: v.replace(/[^0-9]/g,'') }))}
-                keyboardType="numeric"
-                placeholder="0 = gratuit"
-                placeholderTextColor={Colors.textMuted}
-              />
-            </View>
-          </View>
-          <Text style={[s.switchSub, { marginTop: -6, marginBottom: Spacing.lg }]}>
-            {(parseInt(form.price) || 0) === 0 ? '✓ Match gratuit' : `${parseInt(form.price)}€ par joueur`}
-          </Text>
-
-          {/* Description */}
-          <Text style={s.fieldLabel}>Description (optionnelle)</Text>
-          <TextInput
-            style={[s.input, {height:70, textAlignVertical:'top'}]}
-            value={form.description}
-            onChangeText={v => setForm(f => ({...f, description: v}))}
-            placeholder="Niveau requis, infos pratiques..."
-            placeholderTextColor={Colors.textMuted}
-            multiline
-          />
-
-          {/* Match privé */}
-          <View style={s.switchRow}>
-            <View>
-              <Text style={s.switchLabel}>Match privé</Text>
-              <Text style={s.switchSub}>Visible uniquement via lien</Text>
-            </View>
-            <Switch
-              value={form.isPrivate}
-              onValueChange={v => setForm(f => ({...f, isPrivate: v}))}
-              trackColor={{false: Colors.bg3, true: Colors.greenDim}}
-              thumbColor={form.isPrivate ? Colors.green : Colors.textMuted}
-            />
+            <View style={cs.soonBadge}><Text style={cs.soonBadgeText}>Bientôt</Text></View>
           </View>
 
-          <TouchableOpacity style={[s.btn, loading && s.btnDisabled]} onPress={handleCreateMatch} disabled={loading}
+          {/* ── Submit ── */}
+          <TouchableOpacity style={[cs.submitBtn,loading&&{opacity:0.7}]} onPress={handleCreateMatch} disabled={loading}
             accessibilityRole="button" accessibilityLabel="Publier le match">
-            <Text style={s.btnText}>{loading ? 'Publication...' : '🚀 Publier le match'}</Text>
+            <Ionicons name={loading?'time-outline':'play'} size={20} color="#000"/>
+            <Text style={cs.submitText}>{loading?'Publication…':'Publier le match'}</Text>
           </TouchableOpacity>
-          <View style={{height:60}} />
+          <Text style={cs.submitNote}>Tu rejoins automatiquement en tant qu'organisateur</Text>
+          <View style={{height:60}}/>
         </View>
+
+        {/* ── Modal Calendrier ── */}
+        <Modal visible={showDateModal} transparent animationType="slide" onRequestClose={()=>setShowDateModal(false)}>
+          <TouchableOpacity style={cs.modalBack} activeOpacity={1} onPress={()=>setShowDateModal(false)}>
+            <View style={cs.modalSheet} onStartShouldSetResponder={()=>true}>
+              <View style={cs.modalHandle}/>
+              <Text style={cs.modalTitle}>📅  Choisir une date</Text>
+              <View style={cs.calNavRow}>
+                <TouchableOpacity style={cs.calNavBtn} onPress={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()-1,1))}>
+                  <Text style={cs.calNavBtnText}>‹</Text>
+                </TouchableOpacity>
+                <Text style={cs.calMonthName}>{MONTH_FR[calMo]} {calYear}</Text>
+                <TouchableOpacity style={cs.calNavBtn} onPress={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()+1,1))}>
+                  <Text style={cs.calNavBtnText}>›</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{flexDirection:'row',marginBottom:8}}>
+                {DAY_FR.map(d=><Text key={d} style={cs.calDayHead}>{d}</Text>)}
+              </View>
+              <View style={{flexDirection:'row',flexWrap:'wrap',marginBottom:16}}>
+                {calDays.map((item,i)=>{
+                  if(!item.day) return <View key={`e${i}`} style={cs.calCell}/>;
+                  const dateStr=item.date?formatFrenchDateFromDate(item.date):'';
+                  const isSel=form.date===dateStr;
+                  return (
+                    <TouchableOpacity key={`d${item.day}`} style={[cs.calCell,item.isPast&&{opacity:0.2}]}
+                      onPress={()=>{if(!item.isPast&&item.date){setForm(f=>({...f,date:dateStr}));}}} disabled={item.isPast}>
+                      <View style={[cs.calDayInner,isSel&&cs.calDaySel]}>
+                        <Text style={[cs.calDayText,isSel&&{color:'#000',fontWeight:'900'}]}>{item.day}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <TouchableOpacity style={cs.modalConfirm} onPress={()=>setShowDateModal(false)}>
+                <Text style={cs.modalConfirmText}>Confirmer</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ── Modal Heure ── */}
+        <Modal visible={showTimeModal} transparent animationType="slide" onRequestClose={()=>setShowTimeModal(false)}>
+          <TouchableOpacity style={cs.modalBack} activeOpacity={1} onPress={()=>setShowTimeModal(false)}>
+            <View style={cs.modalSheet} onStartShouldSetResponder={()=>true}>
+              <View style={cs.modalHandle}/>
+              <Text style={cs.modalTitle}>🕐  Choisir l'heure</Text>
+              <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
+                {(()=>{
+                  const slots:string[]=[];
+                  for(let h=7;h<=23;h++){slots.push(`${String(h).padStart(2,'0')}:00`);slots.push(`${String(h).padStart(2,'0')}:30`);}
+                  return slots.map(t=>(
+                    <TouchableOpacity key={t} style={[cs.timeSlot,form.time===t&&cs.timeSlotOn]} onPress={()=>{setForm(f=>({...f,time:t}));}}>
+                      <Text style={[cs.timeSlotText,form.time===t&&{color:Colors.green}]}>{t}</Text>
+                    </TouchableOpacity>
+                  ));
+                })()}
+              </View>
+              <TouchableOpacity style={cs.modalConfirm} onPress={()=>setShowTimeModal(false)}>
+                <Text style={cs.modalConfirmText}>Confirmer</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
       </ScrollView>
     );
   }
@@ -3387,6 +3473,96 @@ const s = StyleSheet.create({
   chatShareAddrBtn:  { padding:6 },
   msgBubbleAddr:     { backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.greenBorder },
   msgTextAddr:       { color:Colors.green, fontWeight:'600' },
+});
+
+// ── Styles écran création match ───────────────────────────────────────────────
+const cs = StyleSheet.create({
+  header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, paddingTop:Platform.OS==='ios'?56:44, paddingBottom:12 },
+  backBtn:          { width:38, height:38, borderRadius:19, backgroundColor:'rgba(0,230,118,0.10)', alignItems:'center', justifyContent:'center' },
+  headerBadge:      { fontSize:13, fontWeight:'700', color:Colors.textMuted, letterSpacing:1.2, textTransform:'uppercase' },
+
+  hero:             { paddingHorizontal:20, paddingTop:8, paddingBottom:24, alignItems:'center' },
+  heroEyebrow:      { fontSize:11, fontWeight:'700', color:Colors.green, letterSpacing:2, textTransform:'uppercase', marginBottom:6, opacity:0.7 },
+  heroTitle:        { fontSize:32, fontWeight:'900', color:Colors.text, textAlign:'center', lineHeight:38 },
+  heroGreen:        { color:Colors.green },
+  heroSub:          { fontSize:12, color:Colors.textMuted, marginTop:8, letterSpacing:1.5, textTransform:'uppercase' },
+
+  body:             { paddingHorizontal:16 },
+  section:          { marginBottom:24 },
+  sectionHead:      { flexDirection:'row', alignItems:'center', marginBottom:14, gap:10 },
+  sectionNum:       { width:26, height:26, borderRadius:13, backgroundColor:Colors.green, alignItems:'center', justifyContent:'center' },
+  sectionNumText:   { fontSize:13, fontWeight:'900', color:'#000' },
+  sectionLabel:     { fontSize:16, fontWeight:'800', color:Colors.text },
+
+  formatCard:       { flex:1, alignItems:'center', paddingVertical:14, paddingHorizontal:6, backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', gap:10 },
+  formatName:       { fontSize:12, fontWeight:'700', color:Colors.textMuted, textAlign:'center' },
+
+  chip:             { paddingHorizontal:14, paddingVertical:7, borderRadius:20, backgroundColor:Colors.card, borderWidth:1, borderColor:'rgba(255,255,255,0.08)' },
+  chipOn:           { backgroundColor:Colors.greenDim, borderColor:Colors.green },
+  chipText:         { fontSize:13, fontWeight:'600', color:Colors.textMuted },
+  chipTextOn:       { color:Colors.green },
+
+  dtCard:           { flex:1, backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:14 },
+  dtCardFilled:     { borderColor:Colors.green, backgroundColor:Colors.greenDim },
+  dtTag:            { fontSize:11, color:Colors.textMuted, marginBottom:4 },
+  dtVal:            { fontSize:15, fontWeight:'700', color:Colors.text },
+  dtValEmpty:       { color:Colors.textMuted, fontWeight:'400' },
+  dtChevron:        { position:'absolute', right:12, top:14, fontSize:18, color:Colors.textMuted },
+
+  inputBox:         { flexDirection:'row', alignItems:'center', backgroundColor:Colors.card, borderRadius:12, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', paddingHorizontal:14, paddingVertical:12, gap:8 },
+  inputField:       { flex:1, color:Colors.text, fontSize:15, fontWeight:'500', minHeight:20 },
+  manualLabel:      { fontSize:11, color:Colors.textMuted, fontWeight:'600', letterSpacing:0.5, minWidth:68 },
+
+  pitchMini:        { backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:16, gap:12 },
+  pitchMiniLabel:   { fontSize:13, fontWeight:'700', color:Colors.textMuted },
+
+  playersWidget:    { backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:16, flexDirection:'row', alignItems:'center', gap:16 },
+  playersNum:       { fontSize:42, fontWeight:'900', color:Colors.green, lineHeight:48 },
+  playersLabel:     { fontSize:12, color:Colors.textMuted, fontWeight:'600', marginBottom:8 },
+  progressBar:      { height:4, backgroundColor:'rgba(255,255,255,0.08)', borderRadius:2, overflow:'hidden' },
+  progressFill:     { height:4, backgroundColor:Colors.green, borderRadius:2 },
+  counterBtn:       { width:44, height:44, borderRadius:22, backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.green, alignItems:'center', justifyContent:'center' },
+  counterBtnText:   { fontSize:22, fontWeight:'900', color:Colors.green, lineHeight:26 },
+
+  priceOpt:         { flex:1, flexDirection:'row', alignItems:'center', gap:12, backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:14 },
+  priceOptOn:       { borderColor:Colors.green, backgroundColor:Colors.greenDim },
+  priceOptTitle:    { fontSize:14, fontWeight:'700', color:Colors.text },
+  priceOptSub:      { fontSize:11, color:Colors.textMuted, marginTop:2 },
+  priceRadio:       { width:18, height:18, borderRadius:9, borderWidth:2, borderColor:'rgba(255,255,255,0.2)' },
+  priceRadioOn:     { borderColor:Colors.green, backgroundColor:Colors.green },
+
+  soonCard:         { flexDirection:'row', alignItems:'center', backgroundColor:'rgba(255,255,255,0.03)', borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.06)', padding:16, marginBottom:24, gap:14 },
+  soonIcon:         { width:42, height:42, borderRadius:21, backgroundColor:'rgba(255,255,255,0.07)', alignItems:'center', justifyContent:'center' },
+  soonTitle:        { fontSize:14, fontWeight:'700', color:Colors.textMuted },
+  soonSub:          { fontSize:12, color:Colors.textDim, marginTop:2 },
+  soonBadge:        { paddingHorizontal:10, paddingVertical:4, borderRadius:10, backgroundColor:'rgba(255,255,255,0.07)', borderWidth:1, borderColor:'rgba(255,255,255,0.1)' },
+  soonBadgeText:    { fontSize:11, fontWeight:'700', color:Colors.textMuted, letterSpacing:0.5 },
+
+  submitBtn:        { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:Colors.green, borderRadius:16, paddingVertical:18, marginBottom:12, shadowColor:Colors.green, shadowOpacity:0.35, shadowRadius:16, shadowOffset:{width:0,height:6}, elevation:8 },
+  submitText:       { fontSize:17, fontWeight:'900', color:'#000', letterSpacing:0.3 },
+  submitNote:       { textAlign:'center', fontSize:12, color:Colors.textMuted, marginBottom:8 },
+
+  modalBack:        { flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'flex-end' },
+  modalSheet:       { backgroundColor:'#111811', borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingBottom:36 },
+  modalHandle:      { width:40, height:4, backgroundColor:'rgba(255,255,255,0.15)', borderRadius:2, alignSelf:'center', marginBottom:16 },
+  modalTitle:       { fontSize:18, fontWeight:'900', color:Colors.text, marginBottom:20 },
+
+  calNavRow:        { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:16 },
+  calNavBtn:        { width:36, height:36, borderRadius:18, backgroundColor:Colors.card, alignItems:'center', justifyContent:'center' },
+  calNavBtnText:    { fontSize:20, color:Colors.green, fontWeight:'700', lineHeight:24 },
+  calMonthName:     { fontSize:16, fontWeight:'800', color:Colors.text },
+  calDayHead:       { flex:1, textAlign:'center', fontSize:12, fontWeight:'700', color:Colors.textMuted, marginBottom:4 },
+  calCell:          { width:'14.28%', aspectRatio:1, alignItems:'center', justifyContent:'center', padding:2 },
+  calDayInner:      { width:34, height:34, borderRadius:17, alignItems:'center', justifyContent:'center' },
+  calDaySel:        { backgroundColor:Colors.green },
+  calDayText:       { fontSize:14, fontWeight:'600', color:Colors.text },
+
+  modalConfirm:     { backgroundColor:Colors.green, borderRadius:14, paddingVertical:14, alignItems:'center', marginTop:4 },
+  modalConfirmText: { fontSize:16, fontWeight:'900', color:'#000' },
+
+  timeSlot:         { paddingHorizontal:14, paddingVertical:9, borderRadius:10, backgroundColor:Colors.card, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)' },
+  timeSlotOn:       { backgroundColor:Colors.greenDim, borderColor:Colors.green },
+  timeSlotText:     { fontSize:14, fontWeight:'600', color:Colors.textMuted },
 });
 
 

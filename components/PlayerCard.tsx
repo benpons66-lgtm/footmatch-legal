@@ -1,13 +1,16 @@
-// components/PlayerCard.tsx — FootMatch Carte Joueur v5 — Premium Dark Design
+// components/PlayerCard.tsx — FootMatch Carte Joueur
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, Dimensions } from 'react-native';
-import { getLevelConfig } from './ReputationBadge';
-import { MANGA_AVATARS } from './AvatarPicker';
+import {
+  View, Text, StyleSheet, Animated,
+  TouchableOpacity, Dimensions,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { getLevelConfig, getLevelProgress } from './ReputationBadge';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH  = width * 0.82;
+const CARD_WIDTH = Math.min(width * 0.88, 360);
 
-// ─── Score fixe par grade ─────────────────────────────────────────────────────
+// ─── Score FIFA-style par grade ───────────────────────────────────────────────
 export const CARD_SCORES: Record<string, number> = {
   D4: 50, D3: 60, D2: 62, D1: 65,
   R3: 70, R2: 75, R1: 80,
@@ -18,449 +21,315 @@ export const CARD_SCORES: Record<string, number> = {
   'GOAT': 120,
 };
 
-// ─── Tier display helper ──────────────────────────────────────────────────────
+// ─── Labels skill ─────────────────────────────────────────────────────────────
+const SKILL_LABELS: Record<string, string> = {
+  vitesse:   'Vitesse',
+  dribbles:  'Dribbles',
+  physique:  'Physique',
+  '2pieds':  '2 Pieds',
+  technique: 'Technique',
+  tete:      'Tête',
+  gardien:   'Gardien',
+  vision:    'Vision',
+};
+
+const SKILL_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  vitesse:   'flash-outline',
+  dribbles:  'git-branch-outline',
+  physique:  'barbell-outline',
+  '2pieds':  'swap-horizontal-outline',
+  technique: 'trophy-outline',
+  tete:      'ellipse-outline',
+  gardien:   'shield-checkmark-outline',
+  vision:    'eye-outline',
+};
+
+// ─── Tier / grade ─────────────────────────────────────────────────────────────
 function getTierDisplay(rank: string): { tier: string; grade: string } {
   if (['D4','D3','D2','D1'].includes(rank)) return { tier: 'DISTRICT', grade: rank };
-  if (['R3','R2','R1'].includes(rank)) return { tier: 'RÉGIONAL', grade: rank };
-  if (['N3','N2','N1'].includes(rank)) return { tier: 'NATIONAL', grade: rank };
+  if (['R3','R2','R1'].includes(rank))      return { tier: 'RÉGIONAL', grade: rank };
+  if (['N3','N2','N1'].includes(rank))      return { tier: 'NATIONAL', grade: rank };
   if (rank === 'Ligue 2')  return { tier: 'PRO', grade: 'L.2' };
   if (rank === 'Ligue 1')  return { tier: 'PRO', grade: 'L.1' };
   if (rank === 'Serie A')  return { tier: 'PRO', grade: 'S.A' };
   if (rank === 'Bundesliga') return { tier: 'PRO', grade: 'BDL' };
   if (rank === 'Liga')     return { tier: 'PRO', grade: 'LIGA' };
-  if (rank === 'Premier League') return { tier: 'PRO', grade: 'P.L' };
+  if (rank === 'Premier League') return { tier: 'ÉLITE', grade: 'P.L' };
   if (rank === 'Ligue des Champions') return { tier: 'ÉLITE', grade: 'LDC' };
   if (rank === 'Euro')     return { tier: 'ÉLITE', grade: 'EURO' };
   if (rank === 'Coupe du Monde') return { tier: 'ÉLITE', grade: 'CDM' };
   return { tier: 'LÉGENDAIRE', grade: 'GOAT' };
 }
 
-// ─── Personnages humouristiques ───────────────────────────────────────────────
-export const CARD_CHARACTERS: Record<string, {
-  name: string; nickname: string; quote: string;
-  face: string; hat: string; extra: string;
-  vit: number; pas: number; pui: number;
-  vitNote: string; pasNote: string; puiNote: string;
-  role: string; roleIcon: string; roleNote: string;
-}> = {
-  D4: {
-    name: 'Castolo', nickname: 'Le Prodige de sa Mère',
-    quote: '"Meilleur joueur du terrain... selon sa mère"',
-    face: '😤', hat: '🎩', extra: '🧓',
-    vit:1, pas:1, pui:1,
-    vitNote:'marche rapide', pasNote:'atteint parfois la cible', puiNote:'ouvre des pots de confiture',
-    role: 'ROOKIE', roleIcon: '🎮', roleNote: 'Pas encore de stats',
-  },
-  D3: {
-    name: 'Valère Gergrain', nickname: 'Le Maïs qui Pousse',
-    quote: '"Pousse doucement mais sûrement. Très doucement."',
-    face: '😅', hat: '🌽', extra: '🌱',
-    vit:1, pas:1, pui:2,
-    vitNote:'jogging de santé', pasNote:'visait le but', puiNote:'bonne alimentation',
-    role: 'SHOWMAN', roleIcon: '🎬', roleNote: '12 vidéos / match',
-  },
-  D2: {
-    name: 'Momo le Gaucher', nickname: 'Ambidextre dans le Mauvais Sens',
-    quote: '"Ambidextre dans le mauvais sens du terme"',
-    face: '🤷', hat: '🦶', extra: '🦶',
-    vit:1, pas:2, pui:1,
-    vitNote:'se dépêche pas', pasNote:'ça arrive', puiNote:'frappe des 2 pieds, rate des 2',
-    role: 'CLAQUETTES', roleIcon: '🦶', roleNote: '0 but cette saison',
-  },
-  D1: {
-    name: 'Dédé Tatane', nickname: 'Champion de la Touche',
-    quote: '"Son lancer de touche est sa seule arme. Elle est redoutable."',
-    face: '😎', hat: '🤲', extra: '📐',
-    vit:2, pas:1, pui:2,
-    vitNote:'sur les touches', pasNote:'passe = lancer', puiNote:'bras très musclés',
-    role: 'SPÉCIALISTE', roleIcon: '🤲', roleNote: 'Record touche : 47m',
-  },
-  R3: {
-    name: 'Kevin Trapèze', nickname: 'Bosseur du Synthétique',
-    quote: '"Il a usé 4 paires de crampons. Sur 2 matchs."',
-    face: '😤', hat: '👟', extra: '🔩',
-    vit:2, pas:2, pui:2,
-    vitNote:'côté gauche uniquement', pasNote:'précision correcte', puiNote:'solide comme le synthé',
-    role: 'BOSSEUR', roleIcon: '💪', roleNote: '8 matchs d\'affilée',
-  },
-  R2: {
-    name: 'Rodrîgo Laplanche', nickname: 'La Merguez du Milieu',
-    quote: '"Fort comme un bœuf, rapide comme une merguez froide"',
-    face: '🦾', hat: '🌭', extra: '💥',
-    vit:2, pas:2, pui:3,
-    vitNote:'en ligne droite', pasNote:'direct comme la merguez', puiNote:'frappe qui fait peur',
-    role: 'BULLDOZER', roleIcon: '🔥', roleNote: '3 plaquages / match',
-  },
-  R1: {
-    name: 'Thierry la Boulette', nickname: '73% de Dribbles Réussis sur YouTube',
-    quote: '"Analyse les matchs en vidéo. Ne joue plus depuis 2019."',
-    face: '🧐', hat: '📱', extra: '💻',
-    vit:3, pas:2, pui:2,
-    vitNote:'court en vidéo', pasNote:'vu 312 tutos', puiNote:'clique fort sur pause',
-    role: 'ANALYSTE', roleIcon: '📊', roleNote: '7 tutos / semaine',
-  },
-  N3: {
-    name: 'Salvatore Paëllo', nickname: "L'Italien du 93",
-    quote: '"Né à Bondy, se prend pour Pirlo depuis 2006"',
-    face: '🤌', hat: '🇮🇹', extra: '☕',
-    vit:3, pas:3, pui:2,
-    vitNote:'élégante mais lente', pasNote:'ça a du style', puiNote:'préfère la technique',
-    role: 'STYLISTE', roleIcon: '🤌', roleNote: '4 gestes tech / match',
-  },
-  N2: {
-    name: 'Mamadou Superstar', nickname: 'Crampons Dorés, Passes en Argent',
-    quote: '"Il a le style. Les résultats suivent... bientôt."',
-    face: '😎', hat: '✨', extra: '🌟',
-    vit:3, pas:3, pui:3,
-    vitNote:'sprint avec la classe', pasNote:'en argent pas en or', puiNote:'frappe et célèbre',
-    role: 'SUPERSTAR', roleIcon: '✨', roleNote: '4.8 / 5 en style',
-  },
-  N1: {
-    name: 'Jérémy Touchatout', nickname: 'Il Veut la Balle. Tout le Temps.',
-    quote: '"Appelle sa propre touche. Réclame le corner. Signe les feuilles."',
-    face: '🙋', hat: '📋', extra: '🗣️',
-    vit:3, pas:3, pui:3,
-    vitNote:'court pour réclamer', pasNote:'se passe à lui-même', puiNote:'tape dans tout',
-    role: 'BALLON-HOG', roleIcon: '🗣️', roleNote: '38 touches / match',
-  },
-  'Ligue 2': {
-    name: 'Roberto Fantazio', nickname: 'Semi-Pro le Samedi',
-    quote: '"Signature au Five à 14h, réunion de bilan à 9h. Il gère."',
-    face: '🕴️', hat: '💼', extra: '📊',
-    vit:3, pas:3, pui:4,
-    vitNote:'rapide entre les réunions', pasNote:'passe optimisée', puiNote:'frappe rentable',
-    role: 'MANAGER', roleIcon: '💼', roleNote: 'Budget géré, terrain payé',
-  },
-  'Ligue 1': {
-    name: 'Julien Magnifique', nickname: 'Légende dans sa Tête',
-    quote: '"Son pic de forme était sous Sarkozy. Il y croit encore."',
-    face: '🕰️', hat: '📰', extra: '🏆',
-    vit:4, pas:3, pui:3,
-    vitNote:'2007 il était rapide', pasNote:'classe intemporelle', puiNote:'souvenir de frappe',
-    role: 'LÉGENDE', roleIcon: '🏆', roleNote: 'Époque 2007-2009',
-  },
-  'Serie A': {
-    name: 'Marco Bellisimo', nickname: 'Venu pour la Boulangerie',
-    quote: '"Croissant le matin, but splendide le soir. La bella vita."',
-    face: '😍', hat: '🥐', extra: '🇮🇹',
-    vit:4, pas:4, pui:3,
-    vitNote:'rapide comme un espresso', pasNote:'belle comme la pasta', puiNote:'frappe bellissima',
-    role: 'ARTISTE', roleIcon: '🎨', roleNote: 'Beauté > efficacité',
-  },
-  'Bundesliga': {
-    name: 'Hans Präzision', nickname: 'Précis comme une Montre',
-    quote: '"Tir millimétré. Arrive systématiquement à la 23e minute."',
-    face: '🤖', hat: '⌚', extra: '🎯',
-    vit:4, pas:4, pui:4,
-    vitNote:'calculée au millimètre', pasNote:'précision horlogère', puiNote:'tir programmé',
-    role: 'MACHINE', roleIcon: '🤖', roleNote: '96% de précision',
-  },
-  'Liga': {
-    name: 'El Magnifico Pérez', nickname: 'Dribble en Espagnol, Plonge en Français',
-    quote: '"Technique espagnole, simulation française. Le meilleur des deux mondes."',
-    face: '🎭', hat: '🇪🇸', extra: '🌹',
-    vit:4, pas:5, pui:3,
-    vitNote:'Ole ! Ole !', pasNote:'passe comme Xavi', puiNote:'frappe ou plonge ?',
-    role: 'ACTEUR', roleIcon: '🎭', roleNote: '3 simulations / match',
-  },
-  'Premier League': {
-    name: 'Sir Johnny Footix', nickname: 'Play Like English, Cry Like French',
-    quote: '"Joue dur, tacle tout, pleure à la moindre faute adverse."',
-    face: '😤', hat: '🦁', extra: '😭',
-    vit:4, pas:4, pui:5,
-    vitNote:'sprint de guerrier', pasNote:'direct au but', puiNote:'frappe comme un lion',
-    role: 'WARRIOR', roleIcon: '🦁', roleNote: '8 tacles / match',
-  },
-  'Ligue des Champions': {
-    name: 'Zlatano Jr.', nickname: 'Héritier de Tout, Formé par Personne',
-    quote: '"Il est venu au monde avec la technique. Personne ne lui a rien appris."',
-    face: '🦅', hat: '👑', extra: '💎',
-    vit:5, pas:4, pui:4,
-    vitNote:'dépasse les défenseurs', pasNote:'vision extra-terrestre', puiNote:'frappe de légende',
-    role: 'PRODIGE', roleIcon: '👑', roleNote: 'Talent naturel max',
-  },
-  'Euro': {
-    name: 'Eurico Deluxe', nickname: 'Formé à la PlayStation',
-    quote: '"FIFA Div 1 depuis 2009. Sur le terrain, ça passe moins bien."',
-    face: '🕹️', hat: '🌍', extra: '🎮',
-    vit:5, pas:5, pui:4,
-    vitNote:'L2 + carré enfoncés', pasNote:'comme en FIFA', puiNote:'bouton triangle',
-    role: 'GAMER', roleIcon: '🕹️', roleNote: 'FIFA div1 × terrain div3',
-  },
-  'Coupe du Monde': {
-    name: 'Mondialino', nickname: 'Seul Français à avoir Gagné Seul',
-    quote: '"Les 10 autres étaient juste là pour tenir compagnie."',
-    face: '🌍', hat: '🏆', extra: '🥇',
-    vit:5, pas:5, pui:5,
-    vitNote:'vitesse mondiale', pasNote:'passe de champion', puiNote:'frappe décisive',
-    role: 'CHAMPION', roleIcon: '🌍', roleNote: 'MVP de chaque match',
-  },
-  'GOAT': {
-    name: 'Menaldo', nickname: 'Messi + Ronaldo + Garges-lès-Gonesse',
-    quote: '"Portugal ? Argentine ? Non. 93. Le vrai berceau du foot mondial."',
-    face: '🐐', hat: '👑', extra: '🌟',
-    vit:5, pas:5, pui:5,
-    vitNote:'insaisissable', pasNote:'assist du siècle', puiNote:'but de Dieu',
-    role: 'G.O.A.T', roleIcon: '🐐', roleNote: 'Intransférable',
-  },
+// ─── Couleur accent par tier ──────────────────────────────────────────────────
+const TIER_ACCENT: Record<string, { primary: string; secondary: string; bg: string; border: string }> = {
+  DISTRICT:  { primary: '#00E676', secondary: '#00C853', bg: '#0C1C0C', border: 'rgba(0,230,118,0.32)' },
+  RÉGIONAL:  { primary: '#60A5FA', secondary: '#3B82F6', bg: '#0C0F1C', border: 'rgba(96,165,250,0.32)' },
+  NATIONAL:  { primary: '#34D399', secondary: '#10B981', bg: '#0A1A12', border: 'rgba(52,211,153,0.32)' },
+  PRO:       { primary: '#FBBF24', secondary: '#F59E0B', bg: '#1A1400', border: 'rgba(251,191,36,0.32)' },
+  ÉLITE:     { primary: '#A78BFA', secondary: '#7C3AED', bg: '#0E0A1A', border: 'rgba(167,139,250,0.32)' },
+  LÉGENDAIRE:{ primary: '#F97316', secondary: '#EA580C', bg: '#1A0A00', border: 'rgba(249,115,22,0.32)' },
 };
-
-// ─── Styles visuels par tier (atmo = fond photo) ──────────────────────────────
-const CARD_STYLE: Record<string, {
-  bg: string; atmo: string; atmo2: string;
-  border: string; glowLayers: number;
-}> = {
-  D4: { bg:'#0C0C0C', atmo:'#0A160A', atmo2:'#0E200E', border:'#252525', glowLayers:0 },
-  D3: { bg:'#0C0C0C', atmo:'#0C1A0C', atmo2:'#112611', border:'#2A2A2A', glowLayers:0 },
-  D2: { bg:'#0C0C0C', atmo:'#0D1C0D', atmo2:'#122812', border:'#2E2E2E', glowLayers:0 },
-  D1: { bg:'#0C0C0C', atmo:'#0F1E0F', atmo2:'#142C14', border:'#323232', glowLayers:0 },
-  R3: { bg:'#0A0A0F', atmo:'#0A0F1A', atmo2:'#0F1A2E', border:'#25253A', glowLayers:0 },
-  R2: { bg:'#0A0A0F', atmo:'#090E1C', atmo2:'#0E1A34', border:'#28283C', glowLayers:1 },
-  R1: { bg:'#0A0A0F', atmo:'#080D1C', atmo2:'#0C1830', border:'#2A2A42', glowLayers:1 },
-  N3: { bg:'#090F09', atmo:'#081408', atmo2:'#0B1E0C', border:'#252E25', glowLayers:1 },
-  N2: { bg:'#080E08', atmo:'#071207', atmo2:'#091C0A', border:'#222A22', glowLayers:1 },
-  N1: { bg:'#080E08', atmo:'#061006', atmo2:'#0A1A0A', border:'#1E281E', glowLayers:2 },
-  'Ligue 2':  { bg:'#0D0B00', atmo:'#150F00', atmo2:'#1E1500', border:'#2E2400', glowLayers:1 },
-  'Ligue 1':  { bg:'#0E0C00', atmo:'#1A1100', atmo2:'#261800', border:'#382C00', glowLayers:2 },
-  'Serie A':  { bg:'#0E0700', atmo:'#1A0C00', atmo2:'#261200', border:'#381600', glowLayers:2 },
-  'Bundesliga':{ bg:'#0E0000', atmo:'#1A0000', atmo2:'#260000', border:'#380808', glowLayers:2 },
-  'Liga':     { bg:'#0F0000', atmo:'#1C0000', atmo2:'#2A0000', border:'#3E0808', glowLayers:2 },
-  'Premier League': { bg:'#0E0000', atmo:'#1C0000', atmo2:'#2A0000', border:'#400000', glowLayers:3 },
-  'Ligue des Champions': { bg:'#07070F', atmo:'#0C0C20', atmo2:'#121232', border:'#1E1C38', glowLayers:2 },
-  'Euro':     { bg:'#060610', atmo:'#0A0A1C', atmo2:'#0E0E2A', border:'#181630', glowLayers:3 },
-  'Coupe du Monde': { bg:'#05050F', atmo:'#08081A', atmo2:'#0C0C24', border:'#161428', glowLayers:3 },
-  'GOAT':     { bg:'#0A0500', atmo:'#180800', atmo2:'#280D00', border:'#3C1000', glowLayers:4 },
-};
-
-// ─── Étoiles ──────────────────────────────────────────────────────────────────
-function Stars({ value, size }: { value: number; size: number }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
-      {[0,1,2,3,4].map(i => (
-        <Text key={i} style={{ fontSize: size, color: i < value ? '#D4AF37' : 'rgba(255,255,255,0.13)' }}>
-          ★
-        </Text>
-      ))}
-    </View>
-  );
-}
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 interface PlayerStats {
-  matchesPlayed: number; matchesOrganized: number;
-  avgRating: number | null; ratingsGiven: number; noShows: number;
-}
-interface Props {
-  pseudo: string; rank: string; score: number;
-  stats: PlayerStats; avatarId?: string;
-  onPress?: () => void; size?: 'full' | 'mini';
-  disableAnimations?: boolean; scale?: number;
+  matchesPlayed: number;
+  matchesOrganized: number;
+  avgRating: number | null;
+  ratingsGiven: number;
+  noShows: number;
+  goals?: number;
+  assists?: number;
+  skill?: string | null;
 }
 
-// ─── Composant principal ──────────────────────────────────────────────────────
+interface Props {
+  pseudo: string;
+  rank: string;
+  score: number;
+  stats: PlayerStats;
+  avatarId?: string;
+  onPress?: () => void;
+  size?: 'full' | 'mini';
+  disableAnimations?: boolean;
+  scale?: number;
+}
+
+// ─── Composant ────────────────────────────────────────────────────────────────
 export default function PlayerCard({
-  pseudo, rank, score, stats, avatarId,
+  pseudo, rank, score, stats,
   onPress, size = 'full', disableAnimations = false, scale: scaleProp = 1,
 }: Props) {
-  const cfg    = getLevelConfig(rank);
-  const cs     = CARD_STYLE[rank] ?? CARD_STYLE['D4'];
-  const char   = CARD_CHARACTERS[rank] ?? CARD_CHARACTERS['D4'];
-  const avatar = MANGA_AVATARS.find(a => a.id === avatarId) ?? MANGA_AVATARS[0];
-  const isElite = ['Ligue des Champions','Euro','Coupe du Monde','GOAT'].includes(rank);
-  const cardScore = CARD_SCORES[rank] ?? 50;
   const tierInfo  = getTierDisplay(rank);
+  const accent    = TIER_ACCENT[tierInfo.tier] ?? TIER_ACCENT['DISTRICT'];
+  const cardScore = CARD_SCORES[rank] ?? 50;
+  const progress  = getLevelProgress(score);
 
-  const floatY    = useRef(new Animated.Value(0)).current;
-  const glowPulse = useRef(new Animated.Value(0.35)).current;
+  const isFull = size === 'full';
+  const cW     = (isFull ? CARD_WIDTH : CARD_WIDTH * 0.5) * scaleProp;
+  const m      = (isFull ? 1 : 0.5) * scaleProp;
+
+  const floatY   = useRef(new Animated.Value(0)).current;
+  const shimmerX = useRef(new Animated.Value(-1)).current;
 
   useEffect(() => {
     if (disableAnimations) return;
-    if (size === 'full') {
-      Animated.loop(Animated.sequence([
-        Animated.timing(floatY, { toValue: -5, duration: 2400, useNativeDriver: true }),
-        Animated.timing(floatY, { toValue:  0, duration: 2400, useNativeDriver: true }),
-      ])).start();
-    }
-    if (isElite) {
-      Animated.loop(Animated.sequence([
-        Animated.timing(glowPulse, { toValue: 1,    duration: 1200, useNativeDriver: true }),
-        Animated.timing(glowPulse, { toValue: 0.35, duration: 1200, useNativeDriver: true }),
-      ])).start();
-    }
-  }, [rank, size, disableAnimations]); // eslint-disable-line react-hooks/exhaustive-deps
+    Animated.loop(Animated.sequence([
+      Animated.timing(floatY, { toValue: -5, duration: 2600, useNativeDriver: true }),
+      Animated.timing(floatY, { toValue: 0,  duration: 2600, useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(shimmerX, { toValue: 2,  duration: 1800, useNativeDriver: true }),
+      Animated.delay(800),
+      Animated.timing(shimmerX, { toValue: -1, duration: 0,    useNativeDriver: true }),
+    ])).start();
+  }, [rank, disableAnimations]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cW      = (size === 'mini' ? CARD_WIDTH * 0.48 : CARD_WIDTH) * scaleProp;
-  const cH      = cW * 1.56;
-  const m       = (size === 'mini' ? 0.48 : 1) * scaleProp;
-  const photoH  = cH * 0.44;
-  const crownH  = m * 38;
+  const prog      = progress.progress / 100;
+  const progWidth = cW - 48 - 68 - 20;
+  const fillWidth = progWidth * prog;
 
-  const isFull  = size === 'full';
+  const skillLabel = stats.skill ? (SKILL_LABELS[stats.skill] ?? stats.skill) : null;
+  const skillIcon  = stats.skill ? (SKILL_ICONS[stats.skill]  ?? 'flash-outline') : 'flash-outline';
 
   const cardContent = (
-    <View style={{ width: cW, paddingTop: crownH * 0.55, alignItems: 'center' }}>
+    <View style={{ width: cW, paddingTop: m * 36, alignItems: 'center' }}>
 
-      {/* ── COURONNE ──────────────────────────────────────────────────────────── */}
-      <View style={{ position: 'absolute', top: 0, zIndex: 100, width: '100%', alignItems: 'center' }}
-            pointerEvents="none">
-        <View style={[s.crownWrap, {
-          width: crownH * 1.8, height: crownH * 1.3,
-          borderRadius: crownH * 0.8,
-          backgroundColor: cs.bg,
-          borderColor: '#D4AF37' + '55',
-          shadowColor: '#D4AF37',
-          elevation: 10,
-        }]}>
-          <Text style={{ fontSize: crownH * 0.72 }}>👑</Text>
+      {/* ── BALL BADGE ────────────────────────────────────────────────────── */}
+      <View style={[s.ballBadge, {
+        width: m * 80, height: m * 80, borderRadius: m * 40,
+        backgroundColor: accent.bg,
+        shadowColor: '#C9A227', shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.7, shadowRadius: 12, elevation: 12,
+        borderWidth: 2, borderColor: 'rgba(200,158,0,0.55)',
+      }]}>
+        <View style={[s.footballOuter, { width: m * 46, height: m * 46, borderRadius: m * 23 }]}>
+          <Text style={{ fontSize: m * 30 }}>⚽</Text>
         </View>
       </View>
 
-      {/* ── CARTE ─────────────────────────────────────────────────────────────── */}
+      {/* ── CARD ──────────────────────────────────────────────────────────── */}
       <Animated.View style={[s.card, {
-        width: cW, height: cH,
-        backgroundColor: cs.bg,
-        borderColor: cs.border,
-        borderWidth: 2,
-        shadowColor: disableAnimations ? 'transparent' : cfg.color,
-        shadowOffset: { width: 0, height: disableAnimations ? 0 : 10 },
-        shadowOpacity: disableAnimations ? 0 : 0.55,
-        shadowRadius: disableAnimations ? 0 : 22,
-        elevation: disableAnimations ? 0 : 14,
+        width: cW,
+        backgroundColor: accent.bg,
+        borderColor: accent.border,
+        shadowColor: accent.primary,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.35, shadowRadius: 20, elevation: 16,
         transform: (!disableAnimations && isFull) ? [{ translateY: floatY }] : [],
       }]}>
 
-        {/* Bordure intérieure lumineuse */}
-        <View style={[s.innerBorder, { borderColor: cfg.color + '18' }]} pointerEvents="none" />
+        {/* Coins décoratifs */}
+        {isFull && (
+          <>
+            <View style={[s.corner, s.cornerTL, { borderColor: accent.primary + '55' }]} />
+            <View style={[s.corner, s.cornerTR, { borderColor: accent.primary + '55' }]} />
+            <View style={[s.corner, s.cornerBL, { borderColor: accent.primary + '55' }]} />
+            <View style={[s.corner, s.cornerBR, { borderColor: accent.primary + '55' }]} />
+          </>
+        )}
 
-        {/* ── SECTION PHOTO ───────────────────────────────────────────────────── */}
-        <View style={{ height: photoH, overflow: 'hidden' }}>
+        {/* Ligne shimmer top */}
+        <View style={[s.topLine, { backgroundColor: accent.primary + 'AA' }]} />
 
-          {/* Fond atmosphérique */}
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#07100A' }]} />
-          <View style={{
-            position: 'absolute',
-            left: -cW * 0.15, top: -cW * 0.25,
-            width: cW * 1.3, height: cW * 1.3,
-            borderRadius: cW * 0.65,
-            backgroundColor: cs.atmo,
-          }} />
-          <View style={{
-            position: 'absolute',
-            left: cW * 0.12, top: -cW * 0.08,
-            width: cW * 0.76, height: cW * 0.76,
-            borderRadius: cW * 0.38,
-            backgroundColor: cs.atmo2,
-          }} />
-
-          {/* Avatar principal — centré dans l'espace au-dessus du nom overlay */}
-          <View style={[s.avatarCenter, { bottom: m * 62 }]} pointerEvents="none">
-            <Text style={{ fontSize: m * 115, lineHeight: m * 120 }}>{char.face}</Text>
-          </View>
-
-          {/* Score — haut gauche */}
-          <View style={[s.scoreOverlay, { padding: m * 10 }]}>
-            <Text style={[s.scoreNum, { fontSize: m * 68, color: cfg.color, lineHeight: m * 64 }]}>
+        {/* ── HEADER : Score + Level ─────────────────────────────────────── */}
+        <View style={[s.header, { paddingHorizontal: m * 18, paddingTop: m * 14 }]}>
+          <View>
+            <Text style={[s.scoreNum, { fontSize: m * 88, color: accent.primary, lineHeight: m * 96 }]}>
               {cardScore}
             </Text>
-            <Text style={[s.scoreLabel, { fontSize: m * 9, color: cfg.color + 'AA' }]}>SCORE</Text>
+            <Text style={[s.scoreLbl, { fontSize: m * 8, color: accent.primary + '66', letterSpacing: m * 4 }]}>
+              SCORE
+            </Text>
           </View>
-
-          {/* Tier — haut droit */}
-          <View style={[s.tierOverlay, { padding: m * 10 }]}>
-            <View style={[s.tierBadge, {
-              borderColor: cfg.color + '55',
-              backgroundColor: 'rgba(0,0,0,0.55)',
-            }]}>
-              <Text style={[s.tierLabel, { fontSize: m * 8, color: cfg.color }]}>
+          <View style={s.levelBlock}>
+            <View style={[s.tierPill, { borderColor: accent.primary + '55', backgroundColor: accent.primary + '0D' }]}>
+              <Text style={[s.tierPillText, { fontSize: m * 8, color: accent.primary, letterSpacing: m * 2 }]}>
                 {tierInfo.tier}
               </Text>
             </View>
-            <Text style={[s.gradeText, { fontSize: m * 22, color: cfg.color }]}>
+            <Text style={[s.gradeNum, { fontSize: m * 50, color: accent.primary, lineHeight: m * 52, letterSpacing: m * 2 }]}>
               {tierInfo.grade}
             </Text>
-            <Text style={{ fontSize: m * 16 }}>⚽</Text>
-          </View>
-
-          {/* Overlay nom — bas de la photo */}
-          <View style={s.nameOverlay}>
-            {/* Lignes dorées décoratives */}
-            <View style={s.dividerRow}>
-              <View style={s.dividerLine} />
-              <View style={s.dividerDot} />
-              <View style={s.dividerLine} />
+            <View style={[s.shieldBox, {
+              width: m * 32, height: m * 32, borderRadius: m * 7,
+              borderColor: accent.primary + '33', backgroundColor: accent.primary + '0D',
+            }]}>
+              <Ionicons name="shield-outline" size={m * 16} color={accent.primary} />
             </View>
-            <Text style={[s.charName, { fontSize: m * 21 }]} numberOfLines={1}>
-              {char.name}
-            </Text>
-            <Text style={[s.charNick, { fontSize: m * 10.5 }]} numberOfLines={1}>
-              {char.nickname}
-            </Text>
           </View>
         </View>
 
-        {/* ── BADGE RÔLE ──────────────────────────────────────────────────────── */}
+        {/* ── HERO : Éclair ──────────────────────────────────────────────── */}
         {isFull && (
-          <View style={[s.roleBadge, {
-            borderTopColor: cs.border,
-            borderBottomColor: cs.border,
-            backgroundColor: '#0C0C0C',
-          }]}>
-            <Text style={[s.roleText, { fontSize: m * 12.5, color: '#4ADE80' }]}>{char.role}</Text>
-            <Text style={{ fontSize: m * 13 }}> {char.roleIcon}</Text>
-            <View style={[s.roleDot, { backgroundColor: cfg.color + '55' }]} />
-            <Text style={[s.roleNote, { fontSize: m * 11, color: '#D0D0D0' }]}>
-              ⚡ {char.roleNote}
-            </Text>
+          <View style={s.heroZone}>
+            <View style={[s.heroHalo, { backgroundColor: 'rgba(255,160,0,0.10)', width: m * 110, height: m * 38 }]} />
+            <Text style={[s.boltText, { fontSize: m * 46, lineHeight: m * 50 }]}>⚡</Text>
           </View>
         )}
 
-        {/* ── STATS ───────────────────────────────────────────────────────────── */}
-        {isFull && [
-          { icon:'⚔️', label:'ATTAQUE',   value: char.vit, note: char.vitNote },
-          { icon:'🛡️', label:'DEFENSE',   value: char.pas, note: char.pasNote },
-          { icon:'💪',  label:'ENDURANCE', value: char.pui, note: char.puiNote },
-        ].map((stat, idx) => (
-          <View key={stat.label} style={[s.statRow, {
-            backgroundColor: idx === 1 ? '#0F0F0F' : '#0C0C0C',
-            borderTopColor: '#1C1C1C',
-          }]}>
-            <Text style={[s.statIcon, { fontSize: m * 18, width: m * 28 }]}>{stat.icon}</Text>
-            <View style={s.statInfo}>
-              <Text style={[s.statName, { fontSize: m * 11.5, color: '#FFFFFF' }]}>{stat.label}</Text>
-              <Text style={[s.statDesc, { fontSize: m * 9.5 }]} numberOfLines={1}>{stat.note}</Text>
+        {/* ── NOM ────────────────────────────────────────────────────────── */}
+        <View style={[s.nameZone, { paddingHorizontal: m * 20, paddingBottom: m * 8 }]}>
+          <View style={s.divider}>
+            <View style={[s.divLine, { backgroundColor: accent.primary + '33' }]} />
+            <View style={s.divCenter}>
+              <View style={[s.divDash, { backgroundColor: accent.primary + '40' }]} />
+              <View style={s.divDot} />
+              <View style={[s.divDash, { backgroundColor: accent.primary + '40' }]} />
             </View>
-            <Stars value={stat.value} size={m * 13} />
+            <View style={[s.divLine, { backgroundColor: accent.primary + '33' }]} />
           </View>
-        ))}
+          <Text style={[s.playerName, { fontSize: m * 30, letterSpacing: m * 4 }]} numberOfLines={1}>
+            {pseudo.toUpperCase()}
+          </Text>
+          <Text style={[s.playerSub, { fontSize: m * 10, color: accent.primary + '88', letterSpacing: m * 3 }]}>
+            {tierInfo.tier} · {tierInfo.grade}
+          </Text>
+        </View>
 
-        {/* ── CITATION ────────────────────────────────────────────────────────── */}
+        {/* ── STATS ──────────────────────────────────────────────────────── */}
         {isFull && (
-          <View style={[s.quoteSection, { borderTopColor: '#1C1C1C' }]}>
-            <Text style={[s.quoteText, { fontSize: m * 10.5, color: cfg.color + 'AA' }]} numberOfLines={2}>
-              {char.quote}
-            </Text>
-          </View>
-        )}
+          <View style={s.stats}>
 
-        {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
-        {isFull && (
-          <View style={[s.footer, { borderTopColor: '#1C1C1C' }]}>
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <View style={[s.trophyCircle, { borderColor: cfg.color + '40' }]}>
-                <Text style={{ fontSize: m * 16 }}>🏆</Text>
-                <Text style={[s.trophyYear, { fontSize: m * 7, color: '#777' }]}>2026</Text>
+            <StatRow icon="football-outline" label="Matchs joués"    sub="Total de matchs" value={stats.matchesPlayed}    accent={accent.primary} m={m} />
+            <StatRow icon="calendar-outline" label="Matchs organisés" sub="Matchs créés"    value={stats.matchesOrganized} accent={accent.primary} m={m} />
+
+            {/* Buts */}
+            <View style={[s.statRow, { borderTopColor: accent.primary + '12' }]}>
+              <View style={[s.statIco, { borderColor: accent.primary + '30', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+                <Text style={{ fontSize: m * 15 }}>⚽</Text>
+              </View>
+              <View style={s.statText}>
+                <Text style={[s.statName, { fontSize: m * 13 }]}>Buts</Text>
+                <Text style={[s.statSub,  { fontSize: m * 10 }]}>Saisis manuellement</Text>
+              </View>
+              <Text style={[s.statVal, { fontSize: m * 24, color: accent.primary }]}>{stats.goals ?? 0}</Text>
+            </View>
+
+            {/* Passes décisives */}
+            <View style={[s.statRow, { borderTopColor: accent.primary + '12' }]}>
+              <View style={[s.statIco, { borderColor: accent.primary + '30', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+                <Ionicons name="git-merge-outline" size={m * 16} color={accent.primary} />
+              </View>
+              <View style={s.statText}>
+                <Text style={[s.statName, { fontSize: m * 13 }]}>Passes déc.</Text>
+                <Text style={[s.statSub,  { fontSize: m * 10 }]}>Saisis manuellement</Text>
+              </View>
+              <Text style={[s.statVal, { fontSize: m * 24, color: accent.primary }]}>{stats.assists ?? 0}</Text>
+            </View>
+
+            {/* Skill */}
+            <View style={[s.statRow, { borderTopColor: accent.primary + '12' }]}>
+              <View style={[s.statIco, { borderColor: accent.primary + '30', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+                <Ionicons name={skillIcon} size={m * 16} color={accent.primary} />
+              </View>
+              <View style={s.statText}>
+                <Text style={[s.statName, { fontSize: m * 13 }]}>Skill principal</Text>
+                <Text style={[s.statSub,  { fontSize: m * 10 }]}>Caractéristique forte</Text>
+              </View>
+              <Text style={[s.skillVal, { fontSize: m * 13, color: accent.primary }]}>{skillLabel ?? '—'}</Text>
+            </View>
+
+            {/* Notes */}
+            <View style={[s.statRow, { borderTopColor: accent.primary + '12' }]}>
+              <View style={[s.statIco, { borderColor: accent.primary + '30', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+                <Ionicons name="star-outline" size={m * 16} color={accent.primary} />
+              </View>
+              <View style={s.statText}>
+                <Text style={[s.statName, { fontSize: m * 13 }]}>Notes données</Text>
+                <Text style={[s.statSub,  { fontSize: m * 10 }]}>Évaluations laissées</Text>
+              </View>
+              <View style={s.notesRight}>
+                <View style={s.notesTop}>
+                  <Text style={[s.starGold, { fontSize: m * 13 }]}>★</Text>
+                  <Text style={[s.notesAvg, { fontSize: m * 24, color: accent.primary }]}>
+                    {stats.avgRating != null ? stats.avgRating.toFixed(1).replace('.', ',') : '—'}
+                  </Text>
+                </View>
+                <Text style={[s.notesCount, { fontSize: m * 10 }]}>{stats.ratingsGiven} notes</Text>
               </View>
             </View>
-            <Text style={[s.brandText, { fontSize: m * 12, color: '#D0D0D0' }]}>Foot Match ®</Text>
+
           </View>
         )}
 
-        {/* Glow ring élite */}
-        {!disableAnimations && isElite && (
-          <Animated.View style={[s.eliteGlow, { borderColor: cfg.color, opacity: glowPulse }]} />
-        )}
-        {!disableAnimations && cs.glowLayers >= 2 && (
-          <Animated.View style={[s.eliteGlow2, { borderColor: cfg.color + '44', opacity: glowPulse }]} />
+        {/* ── FOOTER : barre de progression ──────────────────────────────── */}
+        {isFull && (
+          <View style={[s.footer, { borderTopColor: accent.primary + '12', paddingHorizontal: m * 18, paddingVertical: m * 10 }]}>
+            <View style={s.progRow}>
+              <View style={[s.pill, s.pillCur, { borderColor: accent.primary + '66', backgroundColor: accent.primary + '14' }]}>
+                <Text style={[s.pillText, { fontSize: m * 13, color: accent.primary }]}>{tierInfo.grade}</Text>
+              </View>
+              <View style={[s.progTrack, { flex: 1, height: m * 6, backgroundColor: accent.primary + '15' }]}>
+                <View style={[s.progFill, { width: fillWidth, backgroundColor: accent.secondary }]}>
+                  {!disableAnimations && (
+                    <Animated.View style={[s.progShimmer, {
+                      transform: [{ translateX: shimmerX.interpolate({
+                        inputRange: [-1, 2],
+                        outputRange: [-fillWidth, fillWidth * 2],
+                      }) }],
+                    }]} />
+                  )}
+                  <View style={[s.progDot, {
+                    width: m * 14, height: m * 14, borderRadius: m * 7,
+                    backgroundColor: accent.primary, borderColor: accent.bg,
+                    shadowColor: accent.primary,
+                  }]} />
+                </View>
+              </View>
+              <View style={[s.pill, s.pillNxt, { borderColor: accent.primary + '22' }]}>
+                <Text style={[s.pillText, { fontSize: m * 13, color: accent.primary + '55' }]}>
+                  {progress.next ?? '—'}
+                </Text>
+              </View>
+            </View>
+            <View style={s.progMeta}>
+              <Text style={[s.progInfo, { fontSize: m * 11, color: accent.primary + '80' }]}>
+                {score.toLocaleString('fr-FR')} pts
+                {progress.next ? ` · ${progress.pointsToNext.toLocaleString('fr-FR')} pts avant ${progress.next}` : ' · Niveau max'}
+              </Text>
+            </View>
+          </View>
         )}
 
       </Animated.View>
@@ -468,107 +337,89 @@ export default function PlayerCard({
   );
 
   return onPress
-    ? <TouchableOpacity onPress={onPress} activeOpacity={0.88}>{cardContent}</TouchableOpacity>
+    ? <TouchableOpacity onPress={onPress} activeOpacity={0.90}>{cardContent}</TouchableOpacity>
     : cardContent;
+}
+
+// ─── Stat row helper ──────────────────────────────────────────────────────────
+function StatRow({ icon, label, sub, value, accent, m }: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string; sub: string; value: number; accent: string; m: number;
+}) {
+  return (
+    <View style={[s.statRow, { borderTopColor: accent + '12' }]}>
+      <View style={[s.statIco, { borderColor: accent + '30', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+        <Ionicons name={icon} size={m * 16} color={accent} />
+      </View>
+      <View style={s.statText}>
+        <Text style={[s.statName, { fontSize: m * 13 }]}>{label}</Text>
+        <Text style={[s.statSub,  { fontSize: m * 10 }]}>{sub}</Text>
+      </View>
+      <Text style={[s.statVal, { fontSize: m * 24, color: accent }]}>{value}</Text>
+    </View>
+  );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  // Carte principale
-  card: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    position: 'relative',
-    flexDirection: 'column',
-  },
-  innerBorder: {
-    position: 'absolute', top: 2, left: 2, right: 2, bottom: 2,
-    borderRadius: 18, borderWidth: 1, zIndex: 1,
-  },
+  ballBadge:    { position: 'absolute', top: 0, zIndex: 10, alignItems: 'center', justifyContent: 'center' },
+  footballOuter:{ alignItems: 'center', justifyContent: 'center' },
+  card:         { borderRadius: 22, borderWidth: 1.5, overflow: 'hidden', position: 'relative' },
+  topLine:      { position: 'absolute', top: 0, left: 0, right: 0, height: 1, zIndex: 5, opacity: 0.8 },
 
-  // Couronne
-  crownWrap: {
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-  },
+  corner:    { position: 'absolute', width: 16, height: 16, zIndex: 6 },
+  cornerTL:  { top: 10, left: 10,  borderTopWidth: 1.5,    borderLeftWidth: 1.5,  borderTopLeftRadius: 3 },
+  cornerTR:  { top: 10, right: 10, borderTopWidth: 1.5,    borderRightWidth: 1.5, borderTopRightRadius: 3 },
+  cornerBL:  { bottom: 10, left: 10,  borderBottomWidth: 1.5, borderLeftWidth: 1.5,  borderBottomLeftRadius: 3 },
+  cornerBR:  { bottom: 10, right: 10, borderBottomWidth: 1.5, borderRightWidth: 1.5, borderBottomRightRadius: 3 },
 
-  // Score (overlay absolu haut-gauche)
-  scoreOverlay: { position: 'absolute', top: 0, left: 0, zIndex: 3 },
-  scoreNum:     { fontWeight: '900', letterSpacing: -2 },
-  scoreLabel:   { fontWeight: '800', letterSpacing: 2.5, marginTop: -8 },
+  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  scoreNum:     { fontWeight: '900' },
+  scoreLbl:     { fontWeight: '800', textTransform: 'uppercase', marginTop: 2 },
+  levelBlock:   { alignItems: 'flex-end', gap: 4, paddingTop: 2 },
+  tierPill:     { borderRadius: 100, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3 },
+  tierPillText: { fontWeight: '800', textTransform: 'uppercase' },
+  gradeNum:     { fontWeight: '900' },
+  shieldBox:    { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 
-  // Tier (overlay absolu haut-droit)
-  tierOverlay: { position: 'absolute', top: 0, right: 0, zIndex: 3, alignItems: 'flex-end', gap: 3 },
-  tierBadge:   { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1 },
-  tierLabel:   { fontWeight: '800', letterSpacing: 0.3 },
-  gradeText:   { fontWeight: '900', letterSpacing: -0.3 },
+  heroZone:  { alignItems: 'center', justifyContent: 'center', paddingVertical: 4, position: 'relative' },
+  heroHalo:  { position: 'absolute', borderRadius: 80 },
+  boltText:  { textShadowColor: 'rgba(255,180,0,0.8)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 18 },
 
-  // Avatar
-  avatarCenter: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    alignItems: 'center', justifyContent: 'center', zIndex: 2,
-  },
+  nameZone:   { alignItems: 'center' },
+  divider:    { flexDirection: 'row', alignItems: 'center', width: '85%', marginBottom: 10 },
+  divLine:    { flex: 1, height: 1 },
+  divCenter:  { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6 },
+  divDash:    { width: 12, height: 1 },
+  divDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(200,155,0,0.85)', shadowColor: '#C9A227', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 5 },
+  playerName: { fontWeight: '900', color: '#FFFFFF', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8, textAlign: 'center' },
+  playerSub:  { fontWeight: '700', textTransform: 'uppercase', textAlign: 'center' },
 
-  // Overlay nom
-  nameOverlay: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 3,
-    backgroundColor: 'rgba(0,0,0,0.68)',
-    paddingHorizontal: 12, paddingTop: 5, paddingBottom: 8,
-    alignItems: 'center', gap: 2,
-  },
-  dividerRow:  { flexDirection: 'row', alignItems: 'center', width: '72%', marginBottom: 3 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#C9A227', opacity: 0.7 },
-  dividerDot:  { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#C9A227', marginHorizontal: 5 },
-  charName:    { fontWeight: '900', letterSpacing: 0.3, color: '#FFFFFF', textAlign: 'center' },
-  charNick:    { fontStyle: 'italic', color: '#BBBBBB', textAlign: 'center', opacity: 0.9 },
+  stats:   {},
+  statRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, paddingHorizontal: 16, borderTopWidth: 1 },
+  statIco: { width: 36, height: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  statText:{ flex: 1 },
+  statName:{ fontWeight: '700', color: '#EAF4EE', letterSpacing: 0.1 },
+  statSub: { fontWeight: '500', color: 'rgba(140,200,165,0.38)', marginTop: 2 },
+  statVal: { fontWeight: '900', letterSpacing: -0.5, lineHeight: 28 },
+  skillVal:{ fontWeight: '900', letterSpacing: 0.5, textAlign: 'right' },
 
-  // Rôle
-  roleBadge: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 9, paddingHorizontal: 14,
-    borderTopWidth: 1, borderBottomWidth: 1,
-  },
-  roleText: { fontWeight: '800', letterSpacing: 0.5 },
-  roleNote: { fontWeight: '500' },
-  roleDot:  { width: 4, height: 4, borderRadius: 2, marginHorizontal: 7 },
+  notesRight: { alignItems: 'flex-end' },
+  notesTop:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  starGold:   { color: '#FFB800', textShadowColor: 'rgba(255,184,0,0.65)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 6 },
+  notesAvg:   { fontWeight: '900', letterSpacing: -0.5, lineHeight: 28 },
+  notesCount: { color: 'rgba(140,200,165,0.38)', fontWeight: '500' },
 
-  // Stats
-  statRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 8, paddingHorizontal: 13,
-    borderTopWidth: 1, gap: 6,
-  },
-  statIcon: { textAlign: 'center' },
-  statInfo: { flex: 1, gap: 1 },
-  statName: { fontWeight: '800', letterSpacing: 0.3 },
-  statDesc: { fontStyle: 'italic', color: '#888888', lineHeight: 13 },
-
-  // Citation — flex:1 pour remplir l'espace restant et centrer le texte
-  quoteSection: {
-    flex: 1,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderTopWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
-  quoteText: { fontStyle: 'italic', textAlign: 'center', lineHeight: 15 },
-
-  // Footer
-  footer: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 7,
-    borderTopWidth: 1,
-  },
-  trophyCircle: {
-    width: 38, height: 38, borderRadius: 19,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  trophyYear: { fontWeight: '700', letterSpacing: 1, marginTop: -2 },
-  brandText:  { fontWeight: '700', letterSpacing: 0.3 },
-
-  // Glow élite
-  eliteGlow:  { position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderRadius: 23, borderWidth: 2 },
-  eliteGlow2: { position: 'absolute', top: -7, left: -7, right: -7, bottom: -7, borderRadius: 27, borderWidth: 1.5 },
+  footer:      { borderTopWidth: 1 },
+  progRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  progTrack:   { borderRadius: 100, overflow: 'hidden', position: 'relative' },
+  progFill:    { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 100, overflow: 'hidden' },
+  progShimmer: { position: 'absolute', top: 0, bottom: 0, width: 40, backgroundColor: 'rgba(255,255,255,0.30)' },
+  progDot:     { position: 'absolute', right: -7, top: '50%', marginTop: -7, borderWidth: 2, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 6, elevation: 4 },
+  pill:        { borderRadius: 100, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 4 },
+  pillCur:     {},
+  pillNxt:     { backgroundColor: 'transparent' },
+  pillText:    { fontWeight: '800', letterSpacing: 1 },
+  progMeta:    { alignItems: 'center' },
+  progInfo:    { fontWeight: '600', letterSpacing: 0.2 },
 });
