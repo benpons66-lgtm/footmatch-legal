@@ -208,7 +208,7 @@ export default function App() {
   const [venueSearch, setVenueSearch] = useState('');
   const [showVenuePicker, setShowVenuePicker] = useState(false);
   const [matchesLoaded, setMatchesLoaded] = useState(false);
-  const [liveStats, setLiveStats] = useState({ players: 847, matchesTonight: 12 });
+  const [liveStats, setLiveStats] = useState({ players: 0, matchesTonight: 0 });
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [communityMessages, setCommunityMessages] = useState<any[]>([]);
   const [communityMessage, setCommunityMessage] = useState('');

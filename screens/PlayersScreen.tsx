@@ -78,7 +78,7 @@ export default function PlayersScreen({
         .from('profiles')
         .select('id, pseudo, level, reputation_score, city, postal_code')
         .order('reputation_score', { ascending: false })
-        .limit(60);
+        .limit(500);
 
       if (error || !data) { if (!cancelled) { setPlayers([]); setLoading(false); } return; }
 
