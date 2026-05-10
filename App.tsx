@@ -215,6 +215,8 @@ export default function App() {
   const [sendingCommunityMsg, setSendingCommunityMsg] = useState(false);
   const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
   const [locationDenied, setLocationDenied] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitedPlayerId, setInvitedPlayerId] = useState<string | null>(null);
 
   function formatFrenchDate(date: Date) {
     const day = String(date.getDate()).padStart(2, '0');
@@ -351,11 +353,28 @@ export default function App() {
     });
     startPulse();
     loadBlockedUsers();
+    // Délai de 2s pour laisser Supabase restaurer la session depuis le storage
+    // avant de vérifier — évite un faux logout au démarrage.
+    setTimeout(ensureValidSession, 2000);
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? true);
     });
     return () => unsubscribe();
   }, []);
+
+  // Détecte un mismatch entre store local (currentUser) et session Supabase :
+  // si l'utilisateur a un currentUser persisté mais pas de session auth active,
+  // tous les appels RLS échoueront silencieusement → on force le logout propre.
+  async function ensureValidSession() {
+    if (!currentUser) return;
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      await supabase.auth.signOut().catch(() => {});
+      setCurrentUser(null);
+      setScreen('login');
+      Alert.alert('Session expirée', 'Reconnecte-toi pour continuer.');
+    }
+  }
 
   async function loadBlockedUsers() {
     try {
@@ -487,7 +506,7 @@ export default function App() {
   }
 
   const searchRef = useRef<TextInput>(null);
-  const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', date:'', time:'', maxPlayers:'10', description:'', isPrivate:false });
+  const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false });
 
   // ── Effects (déclarés AVANT tout early return — règle des hooks React) ──────
 
@@ -1045,7 +1064,7 @@ export default function App() {
         title:form.title.trim(), type:form.type, venue_id:form.venueId,
         organizer_id:currentUser!.id, scheduled_at:scheduledAt,
         max_players:parseInt(form.maxPlayers), current_players:1,
-        price_per_player:0, level:'Tous niveaux',
+        price_per_player:Math.max(0, parseInt(form.price) || 0), level:'Tous niveaux',
         description:form.description, is_private:form.isPrivate, status:'open',
       }).select().single();
       if (error) throw error;
@@ -1053,7 +1072,7 @@ export default function App() {
       scheduleMatchReminder(data.title, new Date(data.scheduled_at), data.id, true);
       setMyMatches(prev => [...prev, data.id]);
       Alert.alert('🎉 Match créé !','Ton match est en ligne !');
-      setForm({ title:'', type:'five', venueId:'', date:'', time:'', maxPlayers:'10', description:'', isPrivate:false });
+      setForm({ title:'', type:'five', venueId:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false });
       setVenueSearch('');
       setScreen('home'); loadMatches();
     } catch (e:any) { Alert.alert('Erreur', e.message); }
@@ -1069,7 +1088,7 @@ export default function App() {
       const { error } = await supabase.from('match_players').insert({ match_id:selectedMatch.id, user_id:currentUser.id, status:'confirmed' });
       if (error) throw error;
       const newCount = Math.max(matchPlayers.length + 1, selectedMatch.current_players + 1);
-      await supabase.from('matches').update({ current_players:newCount }).eq('id', selectedMatch.id);
+      await supabase.from('matches').update({ current_players: newCount }).eq('id', selectedMatch.id);
       setMyMatches(prev => [...prev, selectedMatch.id]);
       setSelectedMatch((prev:any) => ({ ...prev, current_players:newCount }));
       const { data } = await supabase.from('match_players').select('*, user:profiles(id,pseudo,level,reputation_score,reputation_rank)').eq('match_id', selectedMatch.id).eq('status','confirmed');
@@ -1089,7 +1108,7 @@ export default function App() {
         try {
           await supabase.from('match_players').delete().eq('match_id', selectedMatch.id).eq('user_id', currentUser.id);
           const newCount = Math.max(0, matchPlayers.length - 1);
-          await supabase.from('matches').update({ current_players:newCount }).eq('id', selectedMatch.id);
+          await supabase.from('matches').update({ current_players: newCount }).eq('id', selectedMatch.id);
           cancelMatchReminder(selectedMatch.id);
           setMyMatches(prev => prev.filter(id => id !== selectedMatch.id));
           loadMatches(); setScreen('home');
@@ -1098,15 +1117,23 @@ export default function App() {
     ]);
   }
 
+  // Lien public pointant vers la page web ou l'app stores. Servira de fallback
+  // tant que les universal links ne sont pas configurés.
+  const APP_URL = 'https://footmatch.app';
+  function shareUrlForMatch(matchId: string)  { return `${APP_URL}/match/${matchId}`; }
+  function shareUrlForPlayer(playerId: string){ return `${APP_URL}/joueur/${playerId}`; }
+
   async function handleShare() {
     if (!selectedMatch) return;
     try {
       const spots = selectedMatch.max_players - selectedMatch.current_players;
       const spotsText = spots === 0 ? '🔴 Complet' : spots === 1 ? '⚡ Dernière place !' : `✅ ${spots} places restantes`;
       const date = new Date(selectedMatch.scheduled_at).toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
+      const link = shareUrlForMatch(selectedMatch.id);
       await Share.share({
-        message: `⚽ ${selectedMatch.title}\n📍 ${selectedMatch.venue?.name ?? 'Terrain'}, ${selectedMatch.venue?.city ?? ''}\n📅 ${date}\n👥 ${selectedMatch.current_players}/${selectedMatch.max_players} joueurs · ${spotsText}\n\n🆓 Rejoins-nous gratuitement sur FootMatch !`,
+        message: `⚽ ${selectedMatch.title}\n📍 ${selectedMatch.venue?.name ?? 'Terrain'}, ${selectedMatch.venue?.city ?? ''}\n📅 ${date}\n👥 ${selectedMatch.current_players}/${selectedMatch.max_players} joueurs · ${spotsText}\n\n👉 ${link}\n🆓 Rejoins-nous gratuitement sur FootMatch !`,
         title: selectedMatch.title,
+        url: link,
       });
     } catch {}
   }
@@ -1116,11 +1143,94 @@ export default function App() {
     try {
       const rank = currentUser.reputation_rank ?? 'D4';
       const score = currentUser.reputation_score ?? 0;
+      const link = shareUrlForPlayer(currentUser.id);
       await Share.share({
-        message: `🏆 ${currentUser.pseudo} sur FootMatch\n⚡ Rang : ${rank} · ${score} pts\n⚽ ${myMatches.length} match${myMatches.length > 1 ? 's' : ''} joué${myMatches.length > 1 ? 's' : ''}\n\n🆓 Rejoins-moi sur FootMatch — trouve un match en 30 secondes !`,
+        message: `🏆 ${currentUser.pseudo} sur FootMatch\n⚡ Rang : ${rank} · ${score} pts\n⚽ ${myMatches.length} match${myMatches.length > 1 ? 's' : ''} joué${myMatches.length > 1 ? 's' : ''}\n\n👉 ${link}\n🆓 Rejoins-moi sur FootMatch — trouve un match en 30 secondes !`,
         title: `Profil FootMatch — ${currentUser.pseudo}`,
+        url: link,
       });
     } catch {}
+  }
+
+  // Invitation d'un joueur à un de TES matchs (organisé ou rejoint), places libres uniquement.
+  function openInviteModal(playerId: string) {
+    if (!currentUser) return;
+    setInvitedPlayerId(playerId);
+    setShowInviteModal(true);
+  }
+
+  function getInvitableMatches() {
+    if (!currentUser) return [] as any[];
+    const now = new Date();
+    return matches.filter((m: any) => {
+      const isMine = m.organizer_id === currentUser.id || myMatches.includes(m.id);
+      const hasSpots = (m.current_players ?? 0) < (m.max_players ?? 0);
+      const isFuture = new Date(m.scheduled_at) > now;
+      const isOpen = m.status !== 'cancelled' && m.status !== 'completed';
+      return isMine && hasSpots && isFuture && isOpen;
+    });
+  }
+
+  async function handleInviteToMatch(match: any) {
+    setShowInviteModal(false);
+    setInvitedPlayerId(null);
+    try {
+      const date = new Date(match.scheduled_at).toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
+      const link = shareUrlForMatch(match.id);
+      await Share.share({
+        message: `⚽ Tu veux jouer avec moi ?\n${match.title}\n📍 ${match.venue?.name ?? 'Terrain'}, ${match.venue?.city ?? ''}\n📅 ${date}\n👥 ${match.current_players}/${match.max_players} joueurs\n\n👉 ${link}\n🆓 Rejoins-nous sur FootMatch !`,
+        title: match.title,
+        url: link,
+      });
+    } catch {}
+  }
+
+  function renderInviteModal() {
+    if (!showInviteModal) return null;
+    const invitable = getInvitableMatches();
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={() => { setShowInviteModal(false); setInvitedPlayerId(null); }}>
+        <View style={s.inviteOverlay}>
+          <View style={s.inviteSheet}>
+            <View style={s.inviteHeader}>
+              <Text style={s.inviteTitle}>Inviter à un match</Text>
+              <TouchableOpacity onPress={() => { setShowInviteModal(false); setInvitedPlayerId(null); }} accessibilityLabel="Fermer">
+                <Ionicons name="close" size={22} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={s.inviteSub}>Sélectionne un de tes matchs avec des places libres.</Text>
+            {invitable.length === 0 ? (
+              <View style={s.inviteEmpty}>
+                <Ionicons name="football-outline" size={36} color={Colors.textMuted} />
+                <Text style={s.inviteEmptyText}>Aucun match dispo. Crée-en un, ou rejoins un match existant pour pouvoir y inviter des joueurs.</Text>
+                <TouchableOpacity style={s.inviteCreateBtn} onPress={() => { setShowInviteModal(false); setInvitedPlayerId(null); setScreen('create'); }} accessibilityRole="button">
+                  <Text style={s.inviteCreateBtnText}>Créer un match</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }}>
+                {invitable.map((m: any) => {
+                  const dateStr = new Date(m.scheduled_at).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                  const spots = (m.max_players ?? 0) - (m.current_players ?? 0);
+                  return (
+                    <TouchableOpacity key={m.id} style={s.inviteItem} onPress={() => handleInviteToMatch(m)} accessibilityRole="button" accessibilityLabel={`Inviter à ${m.title}`}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.inviteItemTitle} numberOfLines={1}>{m.title}</Text>
+                        <Text style={s.inviteItemMeta}>{dateStr} · {m.venue?.city ?? '—'}</Text>
+                      </View>
+                      <View style={s.inviteItemSpots}>
+                        <Text style={s.inviteItemSpotsText}>{spots} place{spots > 1 ? 's' : ''}</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={Colors.green} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+    );
   }
 
   async function handleRate(matchId: string, rating: number) {
@@ -1548,25 +1658,31 @@ export default function App() {
           currentUserId={currentUser?.id ?? null}
           blockedUserIds={blockedUserIds}
           guestMode={guestMode}
-          onInvite={() => setScreen('create')}
+          onInvite={(playerId) => openInviteModal(playerId)}
           onShowGuestModal={() => setShowGuestModal(true)}
           onViewProfile={(playerId) => { setSelectedPlayer(playerId); setScreen('player_profile'); }}
         />
         <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        {renderInviteModal()}
       </View>
     );
   }
 
   // ── PROFIL JOUEUR ─────────────────────────────────────────────────────────────
   if (screen === 'player_profile' && selectedPlayer) {
-    return <PlayerProfileScreen
-      playerId={selectedPlayer}
-      currentUserId={currentUser?.id ?? null}
-      isBlocked={blockedUserIds.includes(selectedPlayer)}
-      onBack={() => setScreen('players')}
-      onInvite={() => { setScreen('create'); }}
-      onToggleBlock={() => toggleBlockedUserStoreReady(selectedPlayer)}
-    />;
+    return (
+      <>
+        <PlayerProfileScreen
+          playerId={selectedPlayer}
+          currentUserId={currentUser?.id ?? null}
+          isBlocked={blockedUserIds.includes(selectedPlayer)}
+          onBack={() => setScreen('players')}
+          onInvite={() => { if (selectedPlayer) openInviteModal(selectedPlayer); }}
+          onToggleBlock={() => toggleBlockedUserStoreReady(selectedPlayer)}
+        />
+        {renderInviteModal()}
+      </>
+    );
   }
 
   // ── COMPÉTITIONS (onglet unifié) ──────────────────────────────────────────────
@@ -1655,10 +1771,7 @@ export default function App() {
     const upcomingMatches=matches.filter((m:any)=>myMatches.includes(m.id)&&new Date(m.scheduled_at)>new Date());
     const ratedCount=Object.keys(myRatings).length;
     const avgRating=ratedCount>0?(Object.values(myRatings).reduce((a,b)=>a+b,0)/ratedCount).toFixed(1):null;
-    const typeCount=myCreatedMatches.reduce((acc:any,m:any)=>{acc[m.type]=(acc[m.type]||0)+1;return acc;},{});
-    const favoriteType=Object.keys(typeCount).sort((a,b)=>typeCount[b]-typeCount[a])[0];
     const toRate=pastMatches.filter((m:any)=>!myRatings[m.id]);
-    const lvlProgress = getLevelProgress(currentUser?.reputation_score ?? 0);
     // Calcul du streak (semaines consécutives avec au moins 1 match)
     const matchDates = matches
       .filter((m:any) => myMatches.includes(m.id) && new Date(m.scheduled_at) <= new Date())
@@ -1729,23 +1842,7 @@ export default function App() {
                 {userSkill ? SKILLS.find(sk => sk.key === userSkill)?.label ?? 'Skill' : 'Choisir mon skill'}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={{marginTop:14,alignItems:'center'}} onPress={()=>setScreen('reputation')} accessibilityRole="button" accessibilityLabel="Voir ma réputation">
-              <ReputationBadge score={currentUser?.reputation_score??0} rank={getAutoLevel(currentUser?.reputation_score??0)} size="md" showScore />
-              <Text style={{fontSize:11,color:Colors.textMuted,marginTop:5}}>Voir ma réputation →</Text>
-            </TouchableOpacity>
           </View>
-
-          {/* Bouton Carte FUT */}
-          <TouchableOpacity style={s.cardFUTBtn} onPress={()=>setScreen('card')} accessibilityRole="button" accessibilityLabel="Voir ma carte FootMatch">
-            <View style={s.cardFUTBtnLeft}>
-              <Text style={s.cardFUTBtnEmoji}>🃏</Text>
-              <View>
-                <Text style={s.cardFUTBtnTitle}>MA CARTE FOOTMATCH</Text>
-                <Text style={s.cardFUTBtnSub}>Voir ta carte joueur style FUT</Text>
-              </View>
-            </View>
-            <Text style={s.cardFUTBtnArrow}>→</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity style={s.shareProfileBtn} onPress={handleShareProfile} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Partager mon profil">
             <Ionicons name="share-social-outline" size={18} color={Colors.green} />
@@ -1758,7 +1855,7 @@ export default function App() {
               <Text style={s.streakFire}>🔥</Text>
               <View>
                 <Text style={s.streakTitle}>{streak} semaine{streak > 1 ? 's' : ''} de suite !</Text>
-                <Text style={s.streakSub}>Continue pour garder ta streak</Text>
+                <Text style={s.streakSub}>Continue pour monter de division</Text>
               </View>
               <Text style={s.streakCount}>{streak}</Text>
             </View>
@@ -1770,53 +1867,6 @@ export default function App() {
             <View style={s.statCard}><Text style={s.statCardN}>{myCreatedMatches.length}</Text><Text style={s.statCardL}>Créés</Text></View>
           </View>
 
-          <View style={s.advancedStats}>
-            <Text style={s.advancedStatsTitle}>📊 Statistiques</Text>
-            {avgRating&&<View style={s.statRow}><Text style={s.statRowLabel}>📈 Note moyenne donnée</Text><Text style={s.statRowValue}>{avgRating}/5</Text></View>}
-            {favoriteType&&<View style={s.statRow}><Text style={s.statRowLabel}>🏆 Type favori</Text><Text style={s.statRowValue}>{MATCH_TYPES[favoriteType as keyof typeof MATCH_TYPES]?.emoji} {MATCH_TYPES[favoriteType as keyof typeof MATCH_TYPES]?.label}</Text></View>}
-            <View style={s.statRow}><Text style={s.statRowLabel}>⭐ Notes données</Text><Text style={s.statRowValue}>{ratedCount} match{ratedCount>1?'s':''}</Text></View>
-            <View style={s.statRow}><Text style={s.statRowLabel}>📅 À noter</Text><Text style={[s.statRowValue,{color:toRate.length>0?Colors.greenLight:Colors.green}]}>{toRate.length} en attente</Text></View>
-            <View style={s.levelProgress}>
-              {/* Header : niveau actuel + tier */}
-              <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:14}}>
-                <Text style={s.levelProgressTitle}>🎯 Progression</Text>
-                <View style={{backgroundColor: getLevelConfig(lvlProgress.current).bgColor, borderRadius:Radius.full, paddingHorizontal:12, paddingVertical:4, borderWidth:1, borderColor: getLevelConfig(lvlProgress.current).borderColor}}>
-                  <Text style={{fontSize:12, color: getLevelConfig(lvlProgress.current).color, fontWeight:'800'}}>
-                    {getLevelConfig(lvlProgress.current).emoji} {lvlProgress.current}
-                  </Text>
-                </View>
-              </View>
-              {/* Tier label */}
-              <Text style={{fontSize:11, color: getLevelConfig(lvlProgress.current).color, fontWeight:'700', opacity:0.8, marginBottom:8, textTransform:'uppercase', letterSpacing:0.8}}>
-                {lvlProgress.tier}
-              </Text>
-              {/* Barre de progression */}
-              <View style={{flexDirection:'row', alignItems:'center', gap:8, marginBottom:6}}>
-                <Text style={{fontSize:10, color:Colors.textMuted, fontWeight:'700', width:28, textAlign:'center'}}>{lvlProgress.current}</Text>
-                <View style={{flex:1, height:8, backgroundColor:Colors.bg3, borderRadius:4, overflow:'hidden'}}>
-                  <View style={{height:'100%', width:`${lvlProgress.progress}%` as any, backgroundColor: getLevelConfig(lvlProgress.current).color, borderRadius:4}} />
-                </View>
-                <Text style={{fontSize:10, color:Colors.textMuted, fontWeight:'700', width:lvlProgress.next && lvlProgress.next.length > 4 ? 70 : 28, textAlign:'center'}}>{lvlProgress.next ?? '🐐'}</Text>
-              </View>
-              {/* Points restants */}
-              {lvlProgress.next
-                ? <Text style={s.progressText}>📈 {currentUser?.reputation_score ?? 0} pts · encore <Text style={{color: getLevelConfig(lvlProgress.current).color, fontWeight:'800'}}>{lvlProgress.pointsToNext} pts</Text> pour {lvlProgress.next}</Text>
-                : <Text style={[s.progressText,{color:'#F97316', fontWeight:'800'}]}>🐐 Tu as atteint le sommet — GOAT !</Text>
-              }
-              {/* Paliers suivants (les 4 prochains niveaux) */}
-              <View style={{flexDirection:'row', gap:6, marginTop:12, flexWrap:'wrap'}}>
-                {LEVEL_THRESHOLDS
-                  .filter(t => t.score > (currentUser?.reputation_score ?? 0))
-                  .slice(0, 4)
-                  .map(t => (
-                    <View key={t.key} style={{backgroundColor:t.bgColor, borderRadius:Radius.full, paddingHorizontal:8, paddingVertical:3, borderWidth:1, borderColor:t.borderColor}}>
-                      <Text style={{fontSize:9, color:t.color, fontWeight:'700'}}>{t.emoji} {t.key} · {t.score} pts</Text>
-                    </View>
-                  ))
-                }
-              </View>
-            </View>
-          </View>
 
           <View style={s.advancedStats}>
             <Text style={s.advancedStatsTitle}>⚽ Contribution offensive</Text>
@@ -2267,6 +2317,20 @@ export default function App() {
           placeholderTextColor={Colors.textMuted}
         />
 
+        {/* Prix par joueur */}
+        <Text style={s.fieldLabel}>Prix par joueur (€)</Text>
+        <TextInput
+          style={s.input}
+          value={form.price}
+          onChangeText={v => setForm(f => ({...f, price: v.replace(/[^0-9]/g,'') }))}
+          keyboardType="numeric"
+          placeholder="Laisse vide pour gratuit"
+          placeholderTextColor={Colors.textMuted}
+        />
+        <Text style={[s.switchSub, { marginTop: -6, marginBottom: 12 }]}>
+          {(parseInt(form.price) || 0) === 0 ? '✓ Match gratuit' : `${parseInt(form.price)}€ par joueur`}
+        </Text>
+
         {/* Description */}
         <Text style={s.fieldLabel}>Description (optionnelle)</Text>
         <TextInput
@@ -2415,7 +2479,7 @@ export default function App() {
             <TouchableOpacity onPress={()=>{Alert.alert('💡 Suggestion / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Faire une suggestion ou devenir partenaire">
               <Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>💡 Suggestion</Text>
             </TouchableOpacity>
-            <Text style={s.homeLogo}>F<Text style={{fontSize:22}}>⚽</Text><Text style={{fontSize:22}}>⚽</Text>T<Text style={s.green}>Match</Text></Text>
+            <Image source={require('./assets/logo footmatch transparent.png')} style={s.homeLogo} resizeMode="contain" />
             <TouchableOpacity style={s.searchBtn} onPress={()=>{setShowSearch(true);setTimeout(()=>searchRef.current?.focus(),100);}} accessibilityRole="button" accessibilityLabel="Rechercher un match">
               <Ionicons name="search-outline" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
@@ -2686,7 +2750,7 @@ export default function App() {
   return (
     <ScrollView style={s.container} contentContainerStyle={s.contentPad} keyboardShouldPersistTaps="handled">
       <View style={s.authHero}>
-        <Text style={s.authLogo}>F<Text style={{fontSize:32}}>⚽</Text><Text style={{fontSize:32}}>⚽</Text>T<Text style={s.green}>Match</Text></Text>
+        <Image source={require('./assets/logo footmatch transparent.png')} style={s.authLogo} resizeMode="contain" />
         <Text style={s.authTagline}>La plateforme N°1{'\n'}du football amateur</Text>
         <View style={s.authStatRow}>
           <View style={s.authStat}><Text style={s.authStatN}>+1000</Text><Text style={s.authStatL}>joueurs</Text></View>
@@ -2747,8 +2811,24 @@ const s = StyleSheet.create({
   contentPad:        { padding:Spacing.xl, paddingTop:60 },
   green:             { color:Colors.green },
 
+  // Invite modal
+  inviteOverlay:     { flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'flex-end' },
+  inviteSheet:       { backgroundColor:Colors.bg2, borderTopLeftRadius:Radius.xl, borderTopRightRadius:Radius.xl, padding:Spacing.xl, paddingBottom:Spacing['2xl']+10, borderTopWidth:1, borderColor:Colors.border },
+  inviteHeader:      { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:6 },
+  inviteTitle:       { fontSize:18, fontWeight:'800', color:Colors.text },
+  inviteSub:         { fontSize:13, color:Colors.textMuted, marginBottom:14 },
+  inviteEmpty:       { alignItems:'center', padding:Spacing.xl, gap:10 },
+  inviteEmptyText:   { fontSize:13, color:Colors.textMuted, textAlign:'center' },
+  inviteCreateBtn:   { marginTop:8, paddingHorizontal:18, paddingVertical:10, borderRadius:Radius.full, backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.greenBorder },
+  inviteCreateBtnText:{ fontSize:13, fontWeight:'700', color:Colors.green },
+  inviteItem:        { flexDirection:'row', alignItems:'center', gap:10, padding:Spacing.md, backgroundColor:Colors.bg3, borderRadius:Radius.md, marginBottom:8, borderWidth:1, borderColor:Colors.borderSubtle },
+  inviteItemTitle:   { fontSize:14, fontWeight:'700', color:Colors.text },
+  inviteItemMeta:    { fontSize:11, color:Colors.textMuted, marginTop:2 },
+  inviteItemSpots:   { paddingHorizontal:8, paddingVertical:3, borderRadius:Radius.full, backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.greenBorder },
+  inviteItemSpotsText:{ fontSize:11, fontWeight:'700', color:Colors.green },
+
   homeHeader:        { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:Spacing.xl, paddingTop:Platform.OS==='ios'?56:40, paddingBottom:12 },
-  homeLogo:          { fontSize:28, fontWeight:'900', color:Colors.text, letterSpacing:-0.5 },
+  homeLogo:          { width:220, height:100, position:'absolute', left:0, right:0, alignSelf:'center' },
   homeGreet:         { fontSize:13, color:Colors.textMuted, marginTop:2 },
 
   // Hero CTAs
@@ -3131,7 +3211,7 @@ const s = StyleSheet.create({
   gpsActiveText:     { color:Colors.green, fontSize:12, textAlign:'center', fontWeight:'600' },
 
   authHero:          { alignItems:'center', paddingTop:60, paddingBottom:32 },
-  authLogo:          { fontSize:52, fontWeight:'900', color:Colors.text },
+  authLogo:          { width:340, height:155, alignSelf:'center' },
   authTagline:       { fontSize:16, color:Colors.text, fontWeight:'700', marginTop:8, textAlign:'center' },
   authSub:           { fontSize:13, color:Colors.textMuted, marginTop:4 },
   authStatRow:       { flexDirection:'row', alignItems:'center', gap:0, backgroundColor:'rgba(0,230,118,0.06)', borderRadius:Radius.lg, borderWidth:1, borderColor:'rgba(0,230,118,0.12)', paddingVertical:14, paddingHorizontal:8, marginTop:16, width:'100%' },
