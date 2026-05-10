@@ -1,58 +1,53 @@
-# Ordre d'execution Supabase
+# Ordre d'exécution Supabase
 
-Execute les scripts dans cet ordre pour obtenir une communaute de lancement propre, realiste et plafonnee a `D2`.
+## Schéma (une seule fois)
 
-1. `db/seed_fake_data.sql`
-2. `db/seed_1000_players.sql`
-3. `db/seed_matchs_et_fixtures.sql`
-4. `db/SETUP_COMPLET.sql`
-5. `db/store_readiness.sql`
-6. `db/community_profile_and_venues.sql`
-7. `db/security_hardening.sql`
-8. `db/fake_data_consistency.sql`
-9. `db/launch_realism_pass.sql`
+Execute ces scripts dans l'ordre dans le SQL Editor de Supabase :
 
-## Ce que fait la passe finale
+1. `db/SETUP_COMPLET.sql` — schéma complet (tables, RLS, index)
+2. `db/community_chat.sql` — messagerie communauté
+3. `db/community_profile_and_venues.sql` — profils étendus + venues
+4. `db/championship_schema.sql` — championnats
+5. `db/competitions_schema.sql` — compétitions
+6. `db/add_skill_column.sql` — colonne skill
+7. `db/reputation_v2.sql` — système de réputation v2
+8. `db/update_levels_v2.sql` — niveaux D2/D3/D4
+9. `db/rls_missing_tables.sql` — RLS manquants
+10. `db/security_hardening.sql` — renforcement sécurité
+11. `db/venue_name_v1.sql` — venue_name texte libre + delete policy
+12. `db/store_readiness.sql` — vérifications store
+13. `db/invite_notifications.sql` — système d'invitations + notifications
 
-- plafonne tous les faux profils a `D2` maximum
-- remet des pseudos plus sobres sur les profils seedes a la main
-- remplace les titres et descriptions de faux matchs trop "show off"
-- nettoie les noms de championnats et d'equipes
-- regenere un chat communaute plus naturel
+## Fake data de lancement (Perpignan)
 
-## Verifications rapides a faire dans Supabase apres execution
+> **Source unique** : `db/seed_perpignan_v1.sql`
+> Remplace tous les anciens seeds (seed_fake_data, seed_1000_players, seed_matchs_et_fixtures).
 
-1. Verifier qu'aucun faux profil n'est au-dessus de `D2`
+### Si la DB est déjà sale (données mélangées)
+
+1. Lance d'abord `db/cleanup_before_reseed.sql` — supprime toutes les données orphelines
+2. Puis lance `db/seed_perpignan_v1.sql` — charge les 50 joueurs + 10 matchs + 18 messages Perpignan
+
+### Si la DB est vierge
+
+Lance directement `db/seed_perpignan_v1.sql` (idempotent, inclut son propre nettoyage).
+
+## Identifiants fake data
+
+- Profils : préfixe `fa660000-...` (50 joueurs, D4/D3/D2, agglo Perpignan)
+- Matchs  : préfixe `fb660000-...` (10 matchs, distribution réaliste)
+
+## Vérifications rapides après seed
+
 ```sql
-select reputation_rank, count(*) 
-from profiles
-where id::text like 'fa%'
-group by reputation_rank
-order by reputation_rank;
-```
+-- Profils par niveau (attendu : D2=10, D3=20, D4=20)
+SELECT level, count(*) FROM profiles WHERE id::text LIKE 'fa66%' GROUP BY level;
 
-2. Verifier les 20 premiers faux profils
-```sql
-select id, pseudo, reputation_score, reputation_rank
-from profiles
-where id::text like 'fa%'
-order by reputation_score desc
-limit 20;
-```
+-- Remplissage des matchs
+SELECT title, current_players || '/' || max_players AS fill
+FROM matches WHERE id::text LIKE 'fb66%' ORDER BY scheduled_at;
 
-3. Verifier les faux matchs
-```sql
-select id, title, level, current_players, max_players, status
-from matches
-where id::text like 'fb%'
-order by scheduled_at;
-```
-
-4. Verifier le chat communaute
-```sql
-select p.pseudo, cm.content, cm.created_at
-from community_messages cm
-join profiles p on p.id = cm.user_id
-order by cm.created_at desc
-limit 20;
+-- Messages communauté
+SELECT p.pseudo, cm.content FROM community_messages cm
+JOIN profiles p ON p.id = cm.user_id ORDER BY cm.created_at DESC LIMIT 5;
 ```

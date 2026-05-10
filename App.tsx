@@ -1796,6 +1796,10 @@ export default function App() {
       }
     }
     const cardStats = { matchesPlayed:myMatches.length, matchesOrganized:myCreatedMatches.length, avgRating:avgRating?parseFloat(avgRating):null, ratingsGiven:ratedCount, noShows:0 };
+    const profileScore = currentUser?.reputation_score ?? 0;
+    const profileRank = getLevelFromScore(profileScore);
+    const profileCfg = getLevelConfig(profileRank);
+    const profileLvlProgress = getLevelProgress(profileScore);
 
     return (
       <View style={s.container}>
@@ -1867,6 +1871,19 @@ export default function App() {
             <View style={s.statCard}><Text style={s.statCardN}>{myCreatedMatches.length}</Text><Text style={s.statCardL}>Créés</Text></View>
           </View>
 
+          {profileLvlProgress.next && (
+            <View style={s.advancedStats}>
+              <Text style={s.levelProgressTitle}>🏆 Progression</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: profileCfg.color }}>{profileRank}</Text>
+                <Text style={{ fontSize: 11, color: Colors.textMuted }}>{profileLvlProgress.pointsToNext} pts avant {profileLvlProgress.next}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textMuted }}>{profileLvlProgress.next}</Text>
+              </View>
+              <View style={s.progressBar}>
+                <View style={[s.progressFill, { width: `${profileLvlProgress.progress}%` as any }]} />
+              </View>
+            </View>
+          )}
 
           <View style={s.advancedStats}>
             <Text style={s.advancedStatsTitle}>⚽ Contribution offensive</Text>
@@ -2145,222 +2162,292 @@ export default function App() {
     });
 
     return (
-      <ScrollView style={s.container} contentContainerStyle={s.contentPad} keyboardShouldPersistTaps="handled">
-        <View style={s.subHeader}>
-          <TouchableOpacity style={s.backBtn} onPress={() => setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour">
+      <ScrollView style={s.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <StatusBar barStyle="light-content" />
+
+        {/* ── HEADER ── */}
+        <View style={s.createHeader}>
+          <TouchableOpacity style={s.createBackBtn} onPress={() => setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour">
             <Ionicons name="chevron-back" size={22} color={Colors.green} />
           </TouchableOpacity>
-          <Text style={s.subHeaderTitle}>Créer un match</Text>
-          <View style={{width:40}} />
-        </View>
-
-        {/* Type de match */}
-        <Text style={s.fieldLabel}>Type de match</Text>
-        <View style={s.typeRow}>
-          {(Object.keys(MATCH_TYPES) as ('five'|'city'|'eleven')[]).map((t) => {
-            const c = MATCH_TYPES[t];
-            return (
-              <TouchableOpacity
-                key={t}
-                style={[s.typeBtn, form.type === t && {borderColor: c.color, backgroundColor: c.dimColor}]}
-                onPress={() => { setShowVenuePicker(false); setForm(f => ({...f, type: t, venueId:'', maxPlayers: String(c.maxPlayers),
-                  title: f.title === '' || Object.values(MATCH_TYPES).some(mt => f.title === `${mt.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}`) ? `${c.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}` : f.title
-                })); }}
-                accessibilityRole="radio" accessibilityLabel={c.label} accessibilityState={{ selected: form.type === t }}
-              >
-                <Text style={s.typeBtnEmoji}>{c.emoji}</Text>
-                <Text style={[s.typeBtnLabel, form.type === t && {color: c.color}]}>{c.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Nom du match */}
-        <Text style={s.fieldLabel}>Nom du match</Text>
-        <TextInput
-          style={s.input}
-          value={form.title}
-          onChangeText={v => setForm(f => ({...f, title: v}))}
-          placeholder={`Ex: ${cfg.label} du jeudi`}
-          placeholderTextColor={Colors.textMuted}
-        />
-
-        {/* Date rapide */}
-        <Text style={s.fieldLabel}>Date</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:10}}>
-          <View style={{flexDirection:'row', gap:8, paddingHorizontal:2}}>
-            {QUICK_DATES.map(d => (
-              <TouchableOpacity
-                key={d.val}
-                style={[{paddingHorizontal:14, paddingVertical:9, borderRadius:Radius.full, borderWidth:1.5, backgroundColor:Colors.bg2,
-                  borderColor: form.date === d.val ? Colors.green : 'rgba(255,255,255,0.10)'},
-                  form.date === d.val && {backgroundColor: Colors.greenDim}
-                ]}
-                onPress={() => setForm(f => ({...f, date: d.val}))}
-                accessibilityRole="radio" accessibilityLabel={d.label} accessibilityState={{ selected: form.date === d.val }}
-              >
-                <Text style={{fontSize:13, fontWeight:'700', color: form.date === d.val ? Colors.green : Colors.textMuted}}>{d.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-        <TextInput
-          style={[s.input, {marginTop:0}]}
-          value={form.date}
-          onChangeText={v => setForm(f => ({...f, date: v}))}
-          placeholder="12/12/2026"
-          placeholderTextColor={Colors.textMuted}
-          keyboardType="numeric"
-        />
-
-        {/* Heure rapide */}
-        <Text style={s.fieldLabel}>Heure</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:10}}>
-          <View style={{flexDirection:'row', gap:8, paddingHorizontal:2}}>
-            {QUICK_TIMES.map(t => (
-              <TouchableOpacity
-                key={t}
-                style={[{paddingHorizontal:14, paddingVertical:9, borderRadius:Radius.full, borderWidth:1.5, backgroundColor:Colors.bg2,
-                  borderColor: form.time === t ? Colors.green : 'rgba(255,255,255,0.10)'},
-                  form.time === t && {backgroundColor: Colors.greenDim}
-                ]}
-                onPress={() => setForm(f => ({...f, time: t}))}
-                accessibilityRole="radio" accessibilityLabel={`Heure ${t}`} accessibilityState={{ selected: form.time === t }}
-              >
-                <Text style={{fontSize:13, fontWeight:'700', color: form.time === t ? Colors.green : Colors.textMuted}}>{t}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-        <TextInput
-          style={[s.input, {marginTop:0}]}
-          value={form.time}
-          onChangeText={v => setForm(f => ({...f, time: v}))}
-          placeholder="19:30 (ou choisis ci-dessus)"
-          placeholderTextColor={Colors.textMuted}
-          keyboardType="numeric"
-        />
-
-        {/* Terrain avec recherche */}
-        <Text style={s.fieldLabel}>{form.type === 'five' ? 'Complexe de five' : 'Terrain valide par la communaute'}</Text>
-        <Text style={{fontSize:12, color:Colors.textMuted, marginBottom:8}}>
-          {form.type === 'five'
-            ? 'Base officielle FootMatch : recherche par nom, ville ou adresse.'
-            : 'Pour le city et le foot a 11, seuls les terrains proposes puis valides par la communaute apparaissent ici.'}
-        </Text>
-        <View style={{ flexDirection:'row', gap:10, marginBottom:10 }}>
-          <TouchableOpacity
-            style={[s.btn, { flex:1, marginTop:0, paddingVertical:12 }]}
-            onPress={() => setShowVenuePicker((prev) => !prev)}
-            accessibilityRole="button" accessibilityLabel={showVenuePicker ? 'Fermer la liste des stades' : 'Choisir un stade'}
-          >
-            <Text style={s.btnText}>{showVenuePicker ? 'Fermer la liste' : 'Choisir un stade'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.venueOption, { flex:1, marginBottom:0, alignItems:'center', justifyContent:'center' }]}
-            onPress={() => {
-              setVenueForm((prev) => ({ ...prev, types: [form.type], name:'', address:'', city:'' }));
-              setScreen('propose_venue');
-            }}
-            accessibilityRole="button" accessibilityLabel="Proposer un nouveau stade"
-          >
-            <Text style={[s.venueName, { color: Colors.green }]}>+ Ajouter un stade</Text>
-            <Text style={s.venueCity}>Visible avant validation</Text>
-          </TouchableOpacity>
-        </View>
-        {form.venueId ? (
-          <View style={[s.venueOption, s.venueOptionActive]}>
-            <Text style={[s.venueName, {color: Colors.green}]}>{filteredVenues.find((v: any) => v.id === form.venueId)?.name ?? 'Stade selectionne'}</Text>
-            <Text style={s.venueCity}>
-              {filteredVenues.find((v: any) => v.id === form.venueId)?.city ?? 'Selection active'}
+          <View style={s.createHeaderCenter}>
+            <Text style={s.createHeroTitle}>
+              Organise ton <Text style={{color: Colors.green}}>match</Text> ⚽
             </Text>
+            <Text style={s.createHeroSub}>CONFIGURE · PUBLIE · JOUE</Text>
           </View>
-        ) : null}
-        {showVenuePicker && (
-          <>
-            <View style={{flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg2, borderRadius:Radius.md, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', paddingHorizontal:12, paddingVertical:8, marginBottom:8, gap:8}}>
-              <Ionicons name="search-outline" size={16} color={Colors.textMuted} />
+          <View style={{width: 40}} />
+        </View>
+
+        <View style={s.createBody}>
+
+          {/* ── ÉTAPE 1 : FORMAT ── */}
+          <View style={s.createStepRow}>
+            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>1</Text></View>
+            <Text style={s.createStepLabel}>Format du match</Text>
+          </View>
+          <View style={s.typeRow}>
+            {(Object.keys(MATCH_TYPES) as ('five'|'city'|'eleven')[]).map((t) => {
+              const c = MATCH_TYPES[t];
+              const iconColor = form.type === t ? c.color : Colors.textMuted;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  style={[s.typeBtn, form.type === t && {borderColor: c.color, backgroundColor: c.dimColor}]}
+                  onPress={() => { setShowVenuePicker(false); setForm(f => ({...f, type: t, venueId:'', maxPlayers: String(c.maxPlayers),
+                    title: f.title === '' || Object.values(MATCH_TYPES).some(mt => f.title === `${mt.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}`) ? `${c.label} du ${new Date().toLocaleDateString('fr-FR',{weekday:'long'})}` : f.title
+                  })); }}
+                  accessibilityRole="radio" accessibilityLabel={c.label} accessibilityState={{ selected: form.type === t }}
+                >
+                  {t === 'five' ? (
+                    <View style={{ width: 46, height: 34, borderWidth: 2, borderColor: iconColor, borderRadius: 4, overflow: 'hidden' }}>
+                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 22, width: 1.5, backgroundColor: iconColor, opacity: 0.7 }} />
+                      <View style={{ position: 'absolute', top: 9, left: 17, width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: iconColor, opacity: 0.6 }} />
+                      <View style={{ position: 'absolute', top: 8, bottom: 8, left: 0, width: 7, borderRightWidth: 1.5, borderRightColor: iconColor, opacity: 0.5 }} />
+                      <View style={{ position: 'absolute', top: 8, bottom: 8, right: 0, width: 7, borderLeftWidth: 1.5, borderLeftColor: iconColor, opacity: 0.5 }} />
+                    </View>
+                  ) : t === 'city' ? (
+                    <View style={{ width: 42, height: 28, borderWidth: 2, borderColor: iconColor, borderRadius: 2, overflow: 'hidden' }}>
+                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 20, width: 1.5, backgroundColor: iconColor, opacity: 0.7 }} />
+                      <View style={{ position: 'absolute', top: 7, bottom: 7, left: 0, width: 8, borderRightWidth: 1.5, borderRightColor: iconColor, opacity: 0.5 }} />
+                      <View style={{ position: 'absolute', top: 7, bottom: 7, right: 0, width: 8, borderLeftWidth: 1.5, borderLeftColor: iconColor, opacity: 0.5 }} />
+                    </View>
+                  ) : (
+                    <View style={{ width: 46, height: 28, borderWidth: 2, borderColor: iconColor, borderRadius: 2, overflow: 'hidden' }}>
+                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 22, width: 1.5, backgroundColor: iconColor, opacity: 0.7 }} />
+                      <View style={{ position: 'absolute', top: 9, left: 18, width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: iconColor, opacity: 0.6 }} />
+                      <View style={{ position: 'absolute', top: 6, bottom: 6, left: 0, width: 10, borderRightWidth: 1.5, borderRightColor: iconColor, opacity: 0.5 }} />
+                      <View style={{ position: 'absolute', top: 6, bottom: 6, right: 0, width: 10, borderLeftWidth: 1.5, borderLeftColor: iconColor, opacity: 0.5 }} />
+                    </View>
+                  )}
+                  <Text style={[s.typeBtnLabel, form.type === t && {color: c.color}]}>{c.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* ── ÉTAPE 2 : NOM ── */}
+          <View style={s.createStepRow}>
+            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>2</Text></View>
+            <Text style={s.createStepLabel}>Nom du match</Text>
+          </View>
+          <View style={s.createInputRow}>
+            <Ionicons name="create-outline" size={18} color={Colors.textMuted} />
+            <TextInput
+              style={s.createInput}
+              value={form.title}
+              onChangeText={v => setForm(f => ({...f, title: v}))}
+              placeholder={`Ex: ${cfg.label} du jeudi`}
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+
+          {/* ── ÉTAPE 3 : DATE & HEURE ── */}
+          <View style={s.createStepRow}>
+            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>3</Text></View>
+            <Text style={s.createStepLabel}>Date & Heure</Text>
+          </View>
+
+          {/* Dates rapides */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 10}}>
+            <View style={{flexDirection:'row', gap:8, paddingHorizontal:2}}>
+              {QUICK_DATES.map(d => (
+                <TouchableOpacity
+                  key={d.val}
+                  style={[s.quickPill, form.date === d.val && s.quickPillActive]}
+                  onPress={() => setForm(f => ({...f, date: d.val}))}
+                  accessibilityRole="radio" accessibilityLabel={d.label} accessibilityState={{ selected: form.date === d.val }}
+                >
+                  <Text style={[s.quickPillText, form.date === d.val && s.quickPillTextActive]}>{d.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          {/* Heures rapides */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 12}}>
+            <View style={{flexDirection:'row', gap:8, paddingHorizontal:2}}>
+              {QUICK_TIMES.map(t => (
+                <TouchableOpacity
+                  key={t}
+                  style={[s.quickPill, form.time === t && s.quickPillActive]}
+                  onPress={() => setForm(f => ({...f, time: t}))}
+                  accessibilityRole="radio" accessibilityLabel={`Heure ${t}`} accessibilityState={{ selected: form.time === t }}
+                >
+                  <Text style={[s.quickPillText, form.time === t && s.quickPillTextActive]}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          {/* Pickers date / heure — affichage + saisie manuelle dessous */}
+          <View style={{flexDirection:'row', gap:10, marginBottom:10}}>
+            <View style={s.createPickerBtn}>
+              <Text style={s.createPickerIcon}>📅</Text>
+              <View style={{flex:1}}>
+                <Text style={s.createPickerLabel}>Date</Text>
+                <Text style={s.createPickerSub}>{form.date || 'Sélectionner'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+            </View>
+            <View style={s.createPickerBtn}>
+              <Text style={s.createPickerIcon}>⏰</Text>
+              <View style={{flex:1}}>
+                <Text style={s.createPickerLabel}>Heure</Text>
+                <Text style={s.createPickerSub}>{form.time || 'Sélectionner'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+            </View>
+          </View>
+          <View style={{flexDirection:'row', gap:10, marginBottom: Spacing.lg}}>
+            <TextInput
+              style={[s.input, {flex:1, marginBottom:0}]}
+              value={form.date}
+              onChangeText={v => setForm(f => ({...f, date: v}))}
+              placeholder="JJ/MM/AA"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="numeric"
+            />
+            <TextInput
+              style={[s.input, {flex:1, marginBottom:0}]}
+              value={form.time}
+              onChangeText={v => setForm(f => ({...f, time: v}))}
+              placeholder="HH:MM"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="numeric"
+            />
+          </View>
+
+          {/* ── ÉTAPE 4 : TERRAIN ── */}
+          <View style={s.createStepRow}>
+            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>4</Text></View>
+            <Text style={s.createStepLabel}>Terrain / Stade</Text>
+          </View>
+          <Text style={{fontSize:12, color:Colors.textMuted, marginBottom:10}}>
+            {form.type === 'five'
+              ? 'Base officielle FootMatch : recherche par nom, ville ou adresse.'
+              : 'Pour le city et le foot à 11, seuls les terrains proposés puis validés par la communauté apparaissent ici.'}
+          </Text>
+          <View style={{ flexDirection:'row', gap:10, marginBottom:10 }}>
+            <TouchableOpacity
+              style={[s.btn, { flex:1, marginTop:0, paddingVertical:12 }]}
+              onPress={() => setShowVenuePicker((prev) => !prev)}
+              accessibilityRole="button" accessibilityLabel={showVenuePicker ? 'Fermer la liste des stades' : 'Choisir un stade'}
+            >
+              <Text style={s.btnText}>{showVenuePicker ? 'Fermer la liste' : 'Choisir un stade'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.venueOption, { flex:1, marginBottom:0, alignItems:'center', justifyContent:'center' }]}
+              onPress={() => {
+                setVenueForm((prev) => ({ ...prev, types: [form.type], name:'', address:'', city:'' }));
+                setScreen('propose_venue');
+              }}
+              accessibilityRole="button" accessibilityLabel="Proposer un nouveau stade"
+            >
+              <Text style={[s.venueName, { color: Colors.green }]}>+ Ajouter un stade</Text>
+              <Text style={s.venueCity}>Visible avant validation</Text>
+            </TouchableOpacity>
+          </View>
+          {form.venueId ? (
+            <View style={[s.venueOption, s.venueOptionActive]}>
+              <Text style={[s.venueName, {color: Colors.green}]}>{filteredVenues.find((v: any) => v.id === form.venueId)?.name ?? 'Stade sélectionné'}</Text>
+              <Text style={s.venueCity}>{filteredVenues.find((v: any) => v.id === form.venueId)?.city ?? 'Sélection active'}</Text>
+            </View>
+          ) : null}
+          {showVenuePicker && (
+            <>
+              <View style={{flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg2, borderRadius:Radius.md, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', paddingHorizontal:12, paddingVertical:8, marginBottom:8, gap:8}}>
+                <Ionicons name="search-outline" size={16} color={Colors.textMuted} />
+                <TextInput
+                  style={{flex:1, color:Colors.text, fontSize:14}}
+                  value={venueSearch}
+                  onChangeText={setVenueSearch}
+                  placeholder="Nom, ville ou adresse..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+              {filteredVenues.slice(0, 8).map((v) => (
+                <TouchableOpacity
+                  key={v.id}
+                  style={[s.venueOption, form.venueId === v.id && s.venueOptionActive]}
+                  onPress={() => { setForm(f => ({...f, venueId: v.id})); setShowVenuePicker(false); }}
+                  accessibilityRole="button" accessibilityLabel={`Sélectionner ${v.name}, ${v.city}`}
+                >
+                  <Text style={[s.venueName, form.venueId === v.id && {color: Colors.green}]}>{v.name}</Text>
+                  <Text style={s.venueCity}>{v.city}</Text>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+          {filteredVenues.length === 0 && (
+            <View style={{padding:20, alignItems:'center'}}>
+              <Text style={{color:Colors.textMuted, fontSize:13}}>Aucun terrain trouvé — essaie un autre type de match</Text>
+            </View>
+          )}
+
+          {/* ── ÉTAPE 5 : JOUEURS & PRIX ── */}
+          <View style={s.createStepRow}>
+            <View style={s.createStepBadge}><Text style={s.createStepBadgeText}>5</Text></View>
+            <Text style={s.createStepLabel}>Joueurs & Prix</Text>
+          </View>
+          <View style={{flexDirection:'row', gap:10, marginBottom: Spacing.sm}}>
+            <View style={{flex:1}}>
+              <Text style={s.fieldLabel}>Joueurs max</Text>
               <TextInput
-                style={{flex:1, color:Colors.text, fontSize:14}}
-                value={venueSearch}
-                onChangeText={setVenueSearch}
-                placeholder="Nom, ville ou adresse..."
+                style={s.input}
+                value={form.maxPlayers}
+                onChangeText={v => setForm(f => ({...f, maxPlayers: v}))}
+                keyboardType="numeric"
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
-            {filteredVenues.slice(0, 8).map((v) => (
-              <TouchableOpacity
-                key={v.id}
-                style={[s.venueOption, form.venueId === v.id && s.venueOptionActive]}
-                onPress={() => { setForm(f => ({...f, venueId: v.id})); setShowVenuePicker(false); }}
-                accessibilityRole="button" accessibilityLabel={`Sélectionner ${v.name}, ${v.city}`}
-              >
-                <Text style={[s.venueName, form.venueId === v.id && {color: Colors.green}]}>{v.name}</Text>
-                <Text style={s.venueCity}>{v.city}</Text>
-              </TouchableOpacity>
-            ))}
-          </>
-        )}
-        {filteredVenues.length === 0 && (
-          <View style={{padding:20, alignItems:'center'}}>
-            <Text style={{color:Colors.textMuted, fontSize:13}}>Aucun terrain trouvé — essaie un autre type de match</Text>
+            <View style={{flex:1}}>
+              <Text style={s.fieldLabel}>Prix / joueur (€)</Text>
+              <TextInput
+                style={s.input}
+                value={form.price}
+                onChangeText={v => setForm(f => ({...f, price: v.replace(/[^0-9]/g,'') }))}
+                keyboardType="numeric"
+                placeholder="0 = gratuit"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
           </View>
-        )}
+          <Text style={[s.switchSub, { marginTop: -6, marginBottom: Spacing.lg }]}>
+            {(parseInt(form.price) || 0) === 0 ? '✓ Match gratuit' : `${parseInt(form.price)}€ par joueur`}
+          </Text>
 
-        {/* Joueurs max */}
-        <Text style={s.fieldLabel}>Joueurs max</Text>
-        <TextInput
-          style={s.input}
-          value={form.maxPlayers}
-          onChangeText={v => setForm(f => ({...f, maxPlayers: v}))}
-          keyboardType="numeric"
-          placeholderTextColor={Colors.textMuted}
-        />
-
-        {/* Prix par joueur */}
-        <Text style={s.fieldLabel}>Prix par joueur (€)</Text>
-        <TextInput
-          style={s.input}
-          value={form.price}
-          onChangeText={v => setForm(f => ({...f, price: v.replace(/[^0-9]/g,'') }))}
-          keyboardType="numeric"
-          placeholder="Laisse vide pour gratuit"
-          placeholderTextColor={Colors.textMuted}
-        />
-        <Text style={[s.switchSub, { marginTop: -6, marginBottom: 12 }]}>
-          {(parseInt(form.price) || 0) === 0 ? '✓ Match gratuit' : `${parseInt(form.price)}€ par joueur`}
-        </Text>
-
-        {/* Description */}
-        <Text style={s.fieldLabel}>Description (optionnelle)</Text>
-        <TextInput
-          style={[s.input, {height:70, textAlignVertical:'top'}]}
-          value={form.description}
-          onChangeText={v => setForm(f => ({...f, description: v}))}
-          placeholder="Niveau requis, infos pratiques..."
-          placeholderTextColor={Colors.textMuted}
-          multiline
-        />
-
-        {/* Match privé */}
-        <View style={s.switchRow}>
-          <View>
-            <Text style={s.switchLabel}>Match privé</Text>
-            <Text style={s.switchSub}>Visible uniquement via lien</Text>
-          </View>
-          <Switch
-            value={form.isPrivate}
-            onValueChange={v => setForm(f => ({...f, isPrivate: v}))}
-            trackColor={{false: Colors.bg3, true: Colors.greenDim}}
-            thumbColor={form.isPrivate ? Colors.green : Colors.textMuted}
+          {/* Description */}
+          <Text style={s.fieldLabel}>Description (optionnelle)</Text>
+          <TextInput
+            style={[s.input, {height:70, textAlignVertical:'top'}]}
+            value={form.description}
+            onChangeText={v => setForm(f => ({...f, description: v}))}
+            placeholder="Niveau requis, infos pratiques..."
+            placeholderTextColor={Colors.textMuted}
+            multiline
           />
-        </View>
 
-        <TouchableOpacity style={[s.btn, loading && s.btnDisabled]} onPress={handleCreateMatch} disabled={loading}
-          accessibilityRole="button" accessibilityLabel="Publier le match">
-          <Text style={s.btnText}>{loading ? 'Publication...' : '🚀 Publier le match'}</Text>
-        </TouchableOpacity>
-        <View style={{height:60}} />
+          {/* Match privé */}
+          <View style={s.switchRow}>
+            <View>
+              <Text style={s.switchLabel}>Match privé</Text>
+              <Text style={s.switchSub}>Visible uniquement via lien</Text>
+            </View>
+            <Switch
+              value={form.isPrivate}
+              onValueChange={v => setForm(f => ({...f, isPrivate: v}))}
+              trackColor={{false: Colors.bg3, true: Colors.greenDim}}
+              thumbColor={form.isPrivate ? Colors.green : Colors.textMuted}
+            />
+          </View>
+
+          <TouchableOpacity style={[s.btn, loading && s.btnDisabled]} onPress={handleCreateMatch} disabled={loading}
+            accessibilityRole="button" accessibilityLabel="Publier le match">
+            <Text style={s.btnText}>{loading ? 'Publication...' : '🚀 Publier le match'}</Text>
+          </TouchableOpacity>
+          <View style={{height:60}} />
+        </View>
       </ScrollView>
     );
   }
@@ -3018,10 +3105,32 @@ const s = StyleSheet.create({
   fab:               { position:'absolute', bottom:96, right:20, width:60, height:60, borderRadius:30, backgroundColor:Colors.green, alignItems:'center', justifyContent:'center', shadowColor:Colors.green, shadowRadius:16, shadowOpacity:0.5, elevation:10 },
   fabEmoji:          { fontSize:28 },
 
+  // ── Create match form ─────────────────────────────────────────────────────
+  createHeader:      { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.xl, paddingTop:Platform.OS==='ios'?56:40, paddingBottom:Spacing.lg },
+  createBackBtn:     { width:40, height:40, alignItems:'center', justifyContent:'center' },
+  createHeaderCenter:{ flex:1, alignItems:'center' },
+  createHeroTitle:   { fontSize:24, fontWeight:'900', color:Colors.text, textAlign:'center', letterSpacing:-0.3 },
+  createHeroSub:     { fontSize:10, fontWeight:'700', color:Colors.textMuted, letterSpacing:2, marginTop:4, textAlign:'center' },
+  createBody:        { paddingHorizontal:Spacing.xl },
+  createStepRow:     { flexDirection:'row', alignItems:'center', gap:10, marginBottom:12, marginTop:6 },
+  createStepBadge:   { width:28, height:28, borderRadius:14, backgroundColor:Colors.green, alignItems:'center', justifyContent:'center' },
+  createStepBadgeText:{ color:'#000', fontWeight:'900', fontSize:14 },
+  createStepLabel:   { fontSize:17, fontWeight:'800', color:Colors.text },
+  createInputRow:    { flexDirection:'row', alignItems:'center', gap:10, backgroundColor:Colors.bg3, borderRadius:Radius.md, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', paddingHorizontal:Spacing.lg, paddingVertical:13, marginBottom:Spacing.lg },
+  createInput:       { flex:1, color:Colors.text, fontSize:15 },
+  quickPill:         { paddingHorizontal:14, paddingVertical:9, borderRadius:Radius.full, borderWidth:1.5, backgroundColor:Colors.bg2, borderColor:'rgba(255,255,255,0.10)' },
+  quickPillActive:   { backgroundColor:Colors.greenDim, borderColor:Colors.green },
+  quickPillText:     { fontSize:13, fontWeight:'700', color:Colors.textMuted },
+  quickPillTextActive:{ color:Colors.green },
+  createPickerBtn:   { flex:1, flexDirection:'row', alignItems:'center', gap:8, backgroundColor:Colors.bg3, borderRadius:Radius.md, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', padding:Spacing.md },
+  createPickerIcon:  { fontSize:18 },
+  createPickerLabel: { fontSize:10, color:Colors.textMuted, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 },
+  createPickerSub:   { fontSize:14, fontWeight:'700', color:Colors.text },
+  // ──────────────────────────────────────────────────────────────────────────
   typeRow:           { flexDirection:'row', gap:10, marginBottom:Spacing.lg },
   typeBtn:           { flex:1, backgroundColor:Colors.card, borderWidth:1, borderColor:Colors.borderSubtle, borderRadius:Radius.md, padding:12, alignItems:'center', gap:4 },
   typeBtnEmoji:      { fontSize:22 },
-  typeBtnLabel:      { fontSize:12, fontWeight:'700', color:Colors.textMuted, textTransform:'uppercase' },
+  typeBtnLabel:      { fontSize:12, fontWeight:'700', color:Colors.textMuted },
   venueOption:       { backgroundColor:Colors.bg3, borderRadius:Radius.md, padding:14, marginBottom:8, borderWidth:1, borderColor:Colors.borderSubtle },
   venueOptionActive: { borderColor:Colors.green, backgroundColor:Colors.greenDim },
   venueName:         { fontSize:14, fontWeight:'700', color:Colors.text, textTransform:'uppercase' },

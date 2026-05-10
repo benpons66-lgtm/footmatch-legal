@@ -1,15 +1,14 @@
-// screens/CommunityScreen.tsx — FootMatch Communauté v5
-import React, { useState, useRef } from 'react';
+// screens/CommunityScreen.tsx — FootMatch Communauté v6 (Supabase)
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, KeyboardAvoidingView, Platform,
-  Pressable, Animated,
+  Pressable, Animated, Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
 import { Colors, Radius } from '../constants/theme';
-import { FAKE_MESSAGES, getPlayerById } from '../data/fakeData';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Message {
@@ -20,17 +19,30 @@ interface Message {
   isSystem?:  boolean;
 }
 
-// ─── Données initiales — issues de data/fakeData.ts ──────────────────────────
-// Tous les pseudos ici = les mêmes que dans PlayersScreen et les matchs.
-const INITIAL_MESSAGES: Message[] = FAKE_MESSAGES.map(m => ({
-  id:         m.id,
-  username:   m.playerId === 'system'
-                ? 'FootMatch'
-                : (getPlayerById(m.playerId)?.pseudo ?? 'Joueur'),
-  content:    m.content,
-  created_at: m.createdAt,
-  isSystem:   m.isSystem,
-}));
+// Message système d'accroche, affiché en tête de liste tant que le chat tourne.
+const SYSTEM_MESSAGE: Message = {
+  id:         'msg-sys-live',
+  username:   'FootMatch',
+  content:    '⚽ Plusieurs matchs ouverts cette semaine — trouve le tien !',
+  created_at: new Date().toISOString(),
+  isSystem:   true,
+};
+
+// Fallback affiché si la table community_messages est vide (pré-launch)
+const FALLBACK_MESSAGES: Message[] = [
+  { id: 'fb-1',  username: 'ZizouPerp',    content: 'Quelqu\'un pour un Five ce soir à 20h ? On est déjà 4.',            created_at: new Date(Date.now() - 5 * 3600000).toISOString() },
+  { id: 'fb-2',  username: 'ElToro',       content: 'Dispo ! C\'est où ?',                                               created_at: new Date(Date.now() - 4 * 3600000 - 50 * 60000).toISOString() },
+  { id: 'fb-3',  username: 'ZizouPerp',    content: 'City Stade Moulin à Vent, 66000.',                                  created_at: new Date(Date.now() - 4 * 3600000 - 40 * 60000).toISOString() },
+  { id: 'fb-4',  username: 'LaFleche',     content: 'Je peux venir avec mon frère, ça fait 6.',                          created_at: new Date(Date.now() - 4 * 3600000 - 30 * 60000).toISOString() },
+  { id: 'fb-5',  username: 'WeekendFive',  content: 'Samedi matin j\'organise un match à Canet, niveau D3 minimum.',     created_at: new Date(Date.now() - 3 * 3600000).toISOString() },
+  { id: 'fb-6',  username: 'CanetStyle',   content: 'Super ! Je m\'inscris.',                                            created_at: new Date(Date.now() - 2 * 3600000 - 45 * 60000).toISOString() },
+  { id: 'fb-7',  username: 'LaFuria',      content: 'Quelqu\'un connaît un terrain bien à Thuir ?',                     created_at: new Date(Date.now() - 2 * 3600000 - 20 * 60000).toISOString() },
+  { id: 'fb-8',  username: 'RivesalteBoy', content: 'Le stade municipal est souvent libre le dimanche matin.',           created_at: new Date(Date.now() - 2 * 3600000).toISOString() },
+  { id: 'fb-9',  username: 'NightFive',    content: 'Match ce soir 21h30 à Perpignan, il reste 2 places !',             created_at: new Date(Date.now() - 90 * 60000).toISOString() },
+  { id: 'fb-10', username: 'StreetFoot',   content: 'On a fini 5-4, quel match ! GG à tous.',                           created_at: new Date(Date.now() - 60 * 60000).toISOString() },
+  { id: 'fb-11', username: 'TikiMaestro',  content: 'Prochain match organisé vendredi 19h, rejoignez-nous !',           created_at: new Date(Date.now() - 30 * 60000).toISOString() },
+  { id: 'fb-12', username: 'BabyMbappe',   content: 'Quelqu\'un pour s\'entraîner les tirs francs demain matin ?',      created_at: new Date(Date.now() - 15 * 60000).toISOString() },
+];
 
 // ─── Helper temps relatif ─────────────────────────────────────────────────────
 function timeAgo(iso: string): string {
@@ -52,10 +64,37 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
   const { currentUser } = useStore();
   const myPseudo = currentUser?.pseudo ?? 'Moi';
 
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([SYSTEM_MESSAGE]);
   const [input, setInput]       = useState('');
   const listRef                 = useRef<FlatList>(null);
   const sysScale                = useRef(new Animated.Value(1)).current;
+
+  // ── Chargement messages depuis Supabase ───────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      const { data, error } = await supabase
+        .from('community_messages')
+        .select('id, content, created_at, user:profiles(id, pseudo)')
+        .order('created_at', { ascending: true })
+        .limit(100);
+
+      if (cancelled || error || !data) return;
+
+      const mapped: Message[] = data.map((m: any) => ({
+        id:         m.id,
+        username:   m.user?.pseudo ?? 'Joueur',
+        content:    m.content,
+        created_at: m.created_at,
+      }));
+
+      setMessages([SYSTEM_MESSAGE, ...(mapped.length > 0 ? mapped : FALLBACK_MESSAGES)]);
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Envoi ──────────────────────────────────────────────────────────────────
   async function sendMessage() {
@@ -71,12 +110,12 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
 
     setMessages(prev => [...prev, msg]);
     setInput('');
+    Keyboard.dismiss();
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
 
     await supabase.from('community_messages').insert({
-      user_id:  currentUser?.id,
-      username: myPseudo,
-      content:  text,
+      user_id: currentUser?.id,
+      content: text,
     });
   }
 

@@ -9,7 +9,6 @@ import { Colors, Spacing, Radius } from '../constants/theme';
 import { getLevelConfig, getLevelFromScore, getLevelProgress } from '../components/ReputationBadge';
 import { fetchComputedStatsForUsers, getDisplayReputationScore, isSeededProfileId } from '../lib/playerStats';
 import PlayerCard from '../components/PlayerCard';
-import { getPlayerById, FAKE_MATCHES } from '../data/fakeData';
 
 const SKILL_LABELS: Record<string, string> = {
   vitesse: 'Vitesse',
@@ -51,32 +50,7 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
   async function loadProfile() {
     setLoading(true);
     try {
-      // ── Joueur issu de fakeData.ts (id commence par 'fp-') ────────────────
-      if (playerId.startsWith('fp-')) {
-        const fp = getPlayerById(playerId);
-        if (!fp) { setProfile(null); return; }
-
-        const matchesOrganized = FAKE_MATCHES.filter(m => m.organizerId === playerId).length;
-
-        setProfile({
-          id:               fp.id,
-          pseudo:           fp.pseudo,
-          reputation_score: fp.reputation,
-          created_at:       new Date(Date.now() - 200 * 24 * 3600 * 1000).toISOString(),
-          skill:            null,
-        });
-        setStats({
-          matchesPlayed:        fp.matchesPlayed,
-          matchesOrganized,
-          ratingsReceivedCount: Math.floor(fp.matchesPlayed * 0.8),
-          goals:                fp.goalsScored,
-          assists:              Math.floor(fp.goalsScored * 0.6),
-        });
-        setDisplayScore(fp.reputation);
-        return;
-      }
-
-      // ── Joueur Supabase (id commence par 'fa') ────────────────────────────
+      // ── Joueur Supabase (seed unifié, id commence par 'fa') ───────────────
       const { data: p } = await supabase
         .from('profiles')
         .select('id, pseudo, reputation_score, created_at, skill')

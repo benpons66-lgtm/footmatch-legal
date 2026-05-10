@@ -1,12 +1,27 @@
-// screens/PlayersScreen.tsx — FootMatch Joueurs v2 (simple + fakeData)
-import React, { useState, useMemo } from 'react';
+// screens/PlayersScreen.tsx — FootMatch Joueurs v3 (Supabase, seed unifié)
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
-  StyleSheet,
+  StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius } from '../constants/theme';
-import { FAKE_PLAYERS, type FakePlayer, type Level } from '../data/fakeData';
+import { supabase } from '../lib/supabase';
+import { fetchComputedStatsForUsers } from '../lib/playerStats';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Level = 'D4' | 'D3' | 'D2';
+
+interface Player {
+  id:             string;
+  pseudo:         string;
+  level:          Level;
+  reputation:     number;
+  city:           string;
+  postalCode:     string;
+  matchesPlayed:  number;
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -14,7 +29,7 @@ interface Props {
   currentUserId:  string | null;
   blockedUserIds: string[];
   guestMode:      boolean;
-  onInvite:       () => void;
+  onInvite:       (playerId: string) => void;
   onShowGuestModal: () => void;
   onViewProfile:  (playerId: string) => void;
 }
@@ -28,14 +43,19 @@ const LEVEL_CFG: Record<Level, { label: string; color: string; bg: string; borde
 };
 
 const FILTERS: { key: 'all' | Level; label: string }[] = [
-  { key: 'all', label: 'Tous'     },
-  { key: 'D2',  label: '⚡ D2'   },
-  { key: 'D3',  label: '🎯 D3'   },
-  { key: 'D4',  label: '🌱 D4'   },
+  { key: 'all', label: 'Tous'   },
+  { key: 'D2',  label: '⚡ D2' },
+  { key: 'D3',  label: '🎯 D3' },
+  { key: 'D4',  label: '🌱 D4' },
 ];
 
-// Nombre de joueurs "actifs" affichés dans la bannière (fictif mais crédible)
-const ACTIVE_COUNT = 12;
+// Niveau brut → clé Level (D4 par défaut). Tolère anciennes valeurs FR si encore en base.
+function normalizeLevel(raw: string | null | undefined): Level {
+  if (raw === 'D2' || raw === 'D3' || raw === 'D4') return raw;
+  if (raw === 'Confirmé' || raw === 'Pro' || raw === 'Légende') return 'D2';
+  if (raw === 'Intermédiaire')                                   return 'D3';
+  return 'D4';
+}
 
 // ─── Composant ────────────────────────────────────────────────────────────────
 
@@ -43,13 +63,52 @@ export default function PlayersScreen({
   currentUserId, blockedUserIds, guestMode, onInvite, onShowGuestModal, onViewProfile,
 }: Props) {
 
+  const [players, setPlayers]     = useState<Player[]>([]);
+  const [loading, setLoading]     = useState(true);
   const [search,    setSearch]    = useState('');
   const [activeFilter, setFilter] = useState<'all' | Level>('all');
 
-  // Filtre + recherche en mémoire — pas de Supabase
+  // ── Fetch profiles + stats Supabase ─────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, pseudo, level, reputation_score, city, postal_code')
+        .order('reputation_score', { ascending: false })
+        .limit(60);
+
+      if (error || !data) { if (!cancelled) { setPlayers([]); setLoading(false); } return; }
+
+      const ids   = data.map(p => p.id);
+      const stats = await fetchComputedStatsForUsers(ids);
+
+      if (cancelled) return;
+
+      const mapped: Player[] = data.map((p: any) => ({
+        id:            p.id,
+        pseudo:        p.pseudo ?? 'Joueur',
+        level:         normalizeLevel(p.level),
+        reputation:    p.reputation_score ?? 0,
+        city:          p.city ?? 'Perpignan',
+        postalCode:    p.postal_code ?? '66000',
+        matchesPlayed: stats[p.id]?.matchesPlayed ?? 0,
+      }));
+
+      setPlayers(mapped);
+      setLoading(false);
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Filtre + recherche ─────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return FAKE_PLAYERS
+    return players
       .filter(p => p.id !== currentUserId)
       .filter(p => !blockedUserIds.includes(p.id))
       .filter(p => activeFilter === 'all' || p.level === activeFilter)
@@ -60,12 +119,13 @@ export default function PlayersScreen({
           p.city.toLowerCase().includes(q)   ||
           p.postalCode.includes(q)
         );
-      })
-      .sort((a, b) => b.reputation - a.reputation);
-  }, [search, activeFilter, currentUserId, blockedUserIds]);
+      });
+  }, [players, search, activeFilter, currentUserId, blockedUserIds]);
+
+  const activeCount = players.filter(p => p.matchesPlayed > 0).length || players.length;
 
   // ── Rendu d'une carte joueur ───────────────────────────────────────────────
-  function renderPlayer({ item }: { item: FakePlayer }) {
+  function renderPlayer({ item }: { item: Player }) {
     const cfg   = LEVEL_CFG[item.level];
     const init  = (item.pseudo ?? '?')[0].toUpperCase();
 
@@ -77,15 +137,12 @@ export default function PlayersScreen({
         accessibilityRole="button"
         accessibilityLabel={`Voir le profil de ${item.pseudo}`}
       >
-        {/* Barre de niveau à gauche */}
         <View style={[s.levelBar, { backgroundColor: cfg.color }]} />
 
-        {/* Avatar initiale */}
         <View style={[s.avatar, { borderColor: cfg.color + '50' }]}>
           <Text style={[s.avatarText, { color: cfg.color }]}>{init}</Text>
         </View>
 
-        {/* Infos */}
         <View style={s.info}>
           <Text style={s.pseudo} numberOfLines={1}>{item.pseudo}</Text>
 
@@ -104,10 +161,9 @@ export default function PlayersScreen({
           </View>
         </View>
 
-        {/* Bouton Inviter */}
         <TouchableOpacity
           style={s.inviteBtn}
-          onPress={guestMode ? onShowGuestModal : onInvite}
+          onPress={guestMode ? onShowGuestModal : () => onInvite(item.id)}
           activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel={`Inviter ${item.pseudo}`}
@@ -123,16 +179,14 @@ export default function PlayersScreen({
   return (
     <View style={s.root}>
 
-      {/* Bannière joueurs actifs */}
       <View style={s.activeBanner}>
         <View style={s.activeDot} />
         <Text style={s.activeBannerText}>
-          <Text style={s.activeBannerCount}>{ACTIVE_COUNT}</Text>
+          <Text style={s.activeBannerCount}>{activeCount}</Text>
           {' joueurs actifs maintenant à Perpignan'}
         </Text>
       </View>
 
-      {/* Barre de recherche */}
       <View style={s.searchBar}>
         <Ionicons name="search-outline" size={17} color={Colors.textMuted} />
         <TextInput
@@ -151,7 +205,6 @@ export default function PlayersScreen({
         )}
       </View>
 
-      {/* Filtres niveau */}
       <View style={s.filterRow}>
         {FILTERS.map(f => {
           const active = activeFilter === f.key;
@@ -171,30 +224,34 @@ export default function PlayersScreen({
         })}
       </View>
 
-      {/* Compteur */}
       <Text style={s.count}>
         {filtered.length} joueur{filtered.length !== 1 ? 's' : ''}
         {activeFilter !== 'all' ? ` · ${activeFilter}` : ''}
         {search ? ` · "${search}"` : ''}
       </Text>
 
-      {/* Liste */}
-      <FlatList
-        data={filtered}
-        keyExtractor={p => p.id}
-        renderItem={renderPlayer}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.list}
-        ListEmptyComponent={
-          <View style={s.empty}>
-            <Ionicons name="people-outline" size={48} color={Colors.textMuted} />
-            <Text style={s.emptyTitle}>Aucun joueur trouvé</Text>
-            <Text style={s.emptyText}>
-              {search ? `Aucun résultat pour "${search}"` : 'Essaie un autre filtre'}
-            </Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={s.empty}>
+          <ActivityIndicator color={Colors.green} />
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={p => p.id}
+          renderItem={renderPlayer}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.list}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Ionicons name="people-outline" size={48} color={Colors.textMuted} />
+              <Text style={s.emptyTitle}>Aucun joueur trouvé</Text>
+              <Text style={s.emptyText}>
+                {search ? `Aucun résultat pour "${search}"` : 'Essaie un autre filtre'}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
     </View>
   );
@@ -205,7 +262,6 @@ export default function PlayersScreen({
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.bg },
 
-  // ── Bannière active ──────────────────────────────────────────────────────────
   activeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -227,7 +283,6 @@ const s = StyleSheet.create({
   activeBannerText:  { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
   activeBannerCount: { color: Colors.green, fontWeight: '800' },
 
-  // ── Recherche ────────────────────────────────────────────────────────────────
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -244,7 +299,6 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, color: Colors.text, fontSize: 14 },
 
-  // ── Filtres ──────────────────────────────────────────────────────────────────
   filterRow: {
     flexDirection: 'row',
     gap: 8,
@@ -266,7 +320,6 @@ const s = StyleSheet.create({
   chipText:       { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
   chipTextActive: { color: Colors.green },
 
-  // ── Compteur ─────────────────────────────────────────────────────────────────
   count: {
     fontSize: 12,
     color: Colors.textMuted,
@@ -274,10 +327,8 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // ── Liste ────────────────────────────────────────────────────────────────────
   list: { paddingHorizontal: Spacing.xl, paddingBottom: 100 },
 
-  // ── Carte joueur ─────────────────────────────────────────────────────────────
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -318,7 +369,6 @@ const s = StyleSheet.create({
   locRow:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
   locText:  { fontSize: 11, color: Colors.textMuted },
 
-  // ── Bouton Inviter ────────────────────────────────────────────────────────────
   inviteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -332,7 +382,6 @@ const s = StyleSheet.create({
   },
   inviteText: { fontSize: 11, fontWeight: '700', color: Colors.green },
 
-  // ── Empty ─────────────────────────────────────────────────────────────────────
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
   emptyText:  { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
