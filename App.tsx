@@ -652,22 +652,13 @@ export default function App() {
   async function loadLiveStats() {
     try {
       const now = new Date().toISOString();
-      const [profilesRes, matchesRes, matchPlayersRes] = await Promise.all([
+      const [profilesRes, matchesRes] = await Promise.all([
         supabase.from('profiles').select('id').limit(2500),
         supabase.from('matches').select('id, organizer_id, status, scheduled_at').eq('status','open').gte('scheduled_at', now).limit(500),
-        supabase.from('match_players').select('user_id, status').eq('status', 'confirmed').limit(10000),
       ]);
-      const seededPlayers = (profilesRes.data ?? []).filter((profile: any) => isSeededProfileId(profile.id));
-      const fallbackPlayerIds = new Set<string>();
-      (matchPlayersRes.data ?? []).forEach((row: any) => {
-        if (isSeededProfileId(row.user_id)) fallbackPlayerIds.add(String(row.user_id));
-      });
-      (matchesRes.data ?? []).forEach((match: any) => {
-        if (isSeededProfileId(match.organizer_id)) fallbackPlayerIds.add(String(match.organizer_id));
-      });
       const launchMatches = (matchesRes.data ?? []).filter((match: any) => isLaunchCommunityMatch(match));
       setLiveStats({
-        players: seededPlayers.length > 0 ? seededPlayers.length : fallbackPlayerIds.size,
+        players: (profilesRes.data ?? []).length,
         matchesTonight: launchMatches.length,
       });
     } catch {}
