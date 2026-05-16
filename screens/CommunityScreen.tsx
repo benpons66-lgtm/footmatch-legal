@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, KeyboardAvoidingView, Platform,
-  Pressable, Animated, Keyboard,
+  Pressable, Animated, Keyboard, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -65,9 +65,12 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
   const myPseudo = currentUser?.pseudo ?? 'Moi';
 
   const [messages, setMessages] = useState<Message[]>([SYSTEM_MESSAGE]);
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const [input, setInput]       = useState('');
   const listRef                 = useRef<FlatList>(null);
   const sysScale                = useRef(new Animated.Value(1)).current;
+  const listOpacity             = useRef(new Animated.Value(0)).current;
+  const initialScrollDone       = useRef(false);
 
   // ── Chargement messages depuis Supabase ───────────────────────────────────
   useEffect(() => {
@@ -80,16 +83,19 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
         .order('created_at', { ascending: true })
         .limit(100);
 
-      if (cancelled || error || !data) return;
+      if (cancelled) return;
 
-      const mapped: Message[] = data.map((m: any) => ({
-        id:         m.id,
-        username:   m.user?.pseudo ?? 'Joueur',
-        content:    m.content,
-        created_at: m.created_at,
-      }));
+      if (!error && data) {
+        const mapped: Message[] = data.map((m: any) => ({
+          id:         m.id,
+          username:   m.user?.pseudo ?? 'Joueur',
+          content:    m.content,
+          created_at: m.created_at,
+        }));
+        setMessages([SYSTEM_MESSAGE, ...(mapped.length > 0 ? mapped : FALLBACK_MESSAGES)]);
+      }
 
-      setMessages([SYSTEM_MESSAGE, ...(mapped.length > 0 ? mapped : FALLBACK_MESSAGES)]);
+      if (!cancelled) setLoadingMessages(false);
     }
 
     load();
@@ -198,6 +204,12 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
     <View style={s.root}>
 
       {/* Liste messages — flex:1 pour prendre tout l'espace disponible */}
+      {loadingMessages ? (
+        <View style={s.loadingWrap}>
+          <ActivityIndicator color={Colors.green} size="small" />
+        </View>
+      ) : (
+      <Animated.View style={[s.listWrap, { opacity: listOpacity }]}>
       <FlatList
         ref={listRef}
         data={messages}
@@ -209,9 +221,16 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
             : s.contentList
         }
         showsVerticalScrollIndicator={false}
-        onContentSizeChange={() =>
-          listRef.current?.scrollToEnd({ animated: false })
-        }
+        onContentSizeChange={() => {
+          listRef.current?.scrollToEnd({ animated: false });
+          if (!initialScrollDone.current) {
+            initialScrollDone.current = true;
+            setTimeout(
+              () => Animated.timing(listOpacity, { toValue: 1, duration: 120, useNativeDriver: true }).start(),
+              80,
+            );
+          }
+        }}
         ListEmptyComponent={
           <View style={s.emptyWrap}>
             <Text style={s.emptyEmoji}>👋</Text>
@@ -220,6 +239,8 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
           </View>
         }
       />
+      </Animated.View>
+      )}
 
       {/* Input — KAV uniquement autour de la barre, pas du scroll */}
       <KeyboardAvoidingView
@@ -262,6 +283,8 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.bg },
 
   // ── Liste ────────────────────────────────────────────────────────────────────
+  listWrap:     { flex: 1 },
+  loadingWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   contentList:  { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
   contentEmpty: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
 
@@ -402,22 +425,6 @@ const s = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: Radius.full,
-    backgroundColor: Colors.bg3,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: Colors.text,
-  },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnOff: {
     backgroundColor: Colors.bg3,
     borderWidth: 1,
     borderColor: Colors.border,

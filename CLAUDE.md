@@ -1,7 +1,7 @@
 # FootMatch — Contexte Projet Claude
 
-> Fichier chargé à chaque session. Mis à jour le 2026-04-27 par Ben Pons (Perpignan).
-> **Cap actuel : publier sur App Store + Play Store fin mai 2026.**
+> Mis à jour le 2026-05-16 par Ben Pons (Perpignan).
+> **⚡ URGENCE : soumission stores aujourd'hui. On ne régresse pas, on ne casse rien.**
 
 ---
 
@@ -11,64 +11,46 @@
 
 **Promesse** : Trouve un match en 30 secondes.
 
-**Statut** : V1 fonctionnelle, en finition. 3 chantiers avant store. Lancement géographique = **Perpignan + agglo (66)** uniquement pour la V1.
+**Statut** : V1 **terminée et fonctionnelle**. On est en phase de finition finale — correction des derniers bugs mineurs écran par écran, puis soumission Google Play + App Store.
+
+**Contexte concurrentiel** : un site `footmatch.fr` s'est lancé il y a 8 jours (clubs de foot, positionnement différent). FootMatch garde son nom et son identité. On sort en premier sur le marché des joueurs amateurs.
+
+**Zone de lancement V1** : Perpignan + agglo (66) uniquement.
 
 ---
 
-## 🚦 Les 3 chantiers avant le launch (priorisés)
+## 🚦 Phase actuelle — Finition avant soumission
 
-L'app marche déjà mais a des bugs d'utilisation. Avant les stores, on attaque dans cet ordre :
+Tous les grands chantiers sont terminés :
+- ✅ Chantier 1 — Fake data unifiée (`db/seed_perpignan_v1.sql` en place, `data/fakeData.ts` supprimé)
+- ✅ Chantier 1.5 — Bugs fonctionnels critiques corrigés
+- ✅ Chantier 2 — Refonte esthétique "modern football"
 
-### Chantier 1 — Unifier la fake data (priorité absolue)
-**Problème actuel** : 3 sources de fake data parallèles qui ne se parlent pas → incohérences visibles partout.
+**Ce qui reste** : 2-3 bugs mineurs ciblés, à corriger écran par écran avec Ben.
 
-| Source | À faire |
-|---|---|
-| `data/fakeData.ts` (50 joueurs `fp-001`…) | **À supprimer** une fois la migration faite |
-| `db/seed_fake_data.sql` (100 joueurs `fa00…` France entière) | **À remplacer** par le nouveau seed unifié |
-| `db/seed_1000_players.sql` (1000 joueurs France) | **À supprimer** — trop pour Perpignan |
+### Méthode de travail en finition
 
-**Cible** : **un seul fichier seed SQL** (`db/seed_perpignan_v1.sql`) qui produit :
-- **50 profils** ancrés Perpignan + Canet + Cabestany + Thuir + Rivesaltes + Argelès
-- Pseudos cohérents (mix street/foot/catalan), tous distincts
-- 3 niveaux uniquement : **D4 / D3 / D2** (cap absolu D2 pour la V1, on n'est pas la NBA)
-- ~10 matchs avec **distribution réaliste de remplissage** : 40% bien remplis (≥75%), 30% moyennement (40-70%), 20% peu (<40%), 10% presque vides
-- 15-20 messages communauté avec pseudos *qui existent réellement* dans le seed
-- IDs cohérents entre tables (`organizer_id` du match = profil seed existant ; `playerIds` = profils seed existants ; pseudos cités dans messages = pseudos seed existants)
+- Ben envoie les écrans / fichiers un par un
+- Je lis le fichier complet **avant** de toucher quoi que ce soit
+- Fix minimal et ciblé — **aucun refactor opportuniste**
+- Je signale tout bug supplémentaire détecté en lisant, sans le corriger en silence
+- Je dis ce qui a changé, ce qui est testé, ce qui reste à vérifier
 
-**Règle d'or après migration** : *toute la lecture passe par Supabase*. Plus aucun écran ne lit `data/fakeData.ts`.
+### Règle absolue de cette phase
 
-### Chantier 1.5 — Bug fixes d'utilisation (NE PAS SAUTER)
-**Avant tout chantier esthétique**, on corrige les bugs fonctionnels qui empêchent l'usage normal de l'app. La règle : *un écran qui plante ne peut pas être joli*.
+> **ON NE RÉGRESSE PAS. ON NE CASSE RIEN.**
+>
+> Avant chaque modification, vérifier que les parcours critiques restent intacts :
+> créer un match · rejoindre/quitter · chat communauté · voir un profil · déconnexion.
 
-Méthode :
-- Reproduire le bug sur device avant de patcher
-- Fix minimal et ciblé, pas de refactor opportuniste
-- Vérifier qu'aucun bug "freeze" / "écran bloqué" / "action impossible" n'existe sur les parcours critiques : créer/rejoindre un match, envoyer un message communauté, voir un profil, déconnexion
+### Historique des bugs résolus (référence)
 
-Bugs résolus (2026-05-10) :
-- ✅ Rejoindre/quitter un match → `current_players` remis à jour manuellement en base ET en local (ne jamais supprimer cette ligne même si un trigger SQL existe, les deux cohabitent sans conflit)
-- ✅ Champ prix non saisissable → `price` ajouté au form state + soumission corrigée
-- ✅ Chat navigation bloquée → `Keyboard.dismiss()` au send
-- ✅ Logout intempestif au démarrage → `ensureValidSession()` différée de 2s (laisse Supabase charger la session)
-
-Bugs en cours :
-- _(aucun connu — màj au fil de l'eau)_
-
-### Chantier 2 — Refonte esthétique "modern football"
-**Direction visuelle** : on garde le dark + accent vert mais on durcit l'identité football moderne.
-
-- Inspirations à explorer : **Onefootball** (cards de match), **FIFA Mobile** (animation joueur), **Strava** (clean stats), **Sofascore** (densité info match)
-- Trois écrans à refaire en priorité : **liste Matchs**, **détail Match**, **profil Joueur**
-- **Désactiver les "cartes joueurs humoristiques"** (Castolo, Momo le Gaucher, etc. dans `PlayerCard.tsx`) — on garde le composant mais la version sérieuse uniquement (stats + niveau D4/D3/D2, c'est tout)
-- Conserver pour la V1 : navigation 4 onglets + FAB central, dark map, dark mode exclusif
-
-### Chantier 3 — Tests + soumission stores
-- Tests bout-en-bout sur device physique (iOS + Android) sur les parcours critiques
-- Build prod via EAS, métadonnées stores, screenshots
-- Soumission
-
-**Hors scope V1** : découper App.tsx, push notifications avancées, expansion hors Perpignan, features premium. Tout ça → V1.1+.
+| Date | Bug | Fix |
+|---|---|---|
+| 2026-05-10 | Rejoindre/quitter un match → `current_players` pas mis à jour | Update Supabase **ET** `setSelectedMatch` — les deux cohabitent |
+| 2026-05-10 | Champ prix non saisissable | `price` ajouté au form state + reset corrigé |
+| 2026-05-10 | Chat — navigation bloquée après envoi | `Keyboard.dismiss()` au send |
+| 2026-05-10 | Logout intempestif au démarrage | `ensureValidSession()` différée 2s |
 
 ---
 
@@ -85,7 +67,7 @@ Bugs en cours :
 ### Structure
 ```
 footmatch/
-├── App.tsx                    ⚠️ 3218 lignes — monolithique assumé jusqu'au launch
+├── App.tsx                    ⚠️ 3200+ lignes — monolithique assumé jusqu'au launch
 ├── index.ts                   Entry point + ErrorBoundary
 ├── constants/theme.ts         Colors, Spacing, Radius, MATCH_TYPES
 ├── lib/
@@ -98,12 +80,13 @@ footmatch/
 ├── screens/                   Splash, Onboarding, Legal, Reputation, CardGallery,
 │                              Championship*, Competitions, Community, TeamDetail,
 │                              CupDetail, Players, PlayerProfile
-├── data/fakeData.ts           ⚠️ EN COURS DE SUPPRESSION (chantier 1) — ne plus rien y ajouter
 ├── db/                        Scripts SQL — voir db/SUPABASE_RUN_ORDER.md
 ├── supabase/functions/        Edge Functions (delete-account)
 ├── legal/                     Privacy, TOS, Account Deletion (markdown)
 └── mocks/react-native-maps.web.js
 ```
+
+> `data/fakeData.ts` → **supprimé**. Toute la lecture passe par Supabase.
 
 ---
 
@@ -119,21 +102,17 @@ text #E8F5E8 / textMuted #5A7A5A / textDim #3A5A3A
 border rgba(0,230,118,0.15)
 ```
 
-### Identité (cible chantier 2)
-- Dark + accent néon vert
-- Plus dense en infos (style Sofascore/Onefootball)
-- Typo plus typée "sport" — à valider quand on attaque le chantier 2
-- Animations micro (Reanimated *uniquement si* perf OK — sinon on s'abstient)
-
-### Navigation
-- 4 onglets bottom : **Matchs · Joueurs · Communauté · Profil**
-- FAB central "Créer un match"
-- État dans `App.tsx` (`activeTab` + `currentScreen`)
+### Identité visuelle (appliquée)
+- Dark + accent néon vert, style Sofascore/Onefootball
+- Navigation 4 onglets bottom : **Matchs · Joueurs · Communauté · Profil** + FAB central
+- Dark mode exclusif
+- État navigation dans `App.tsx` (`activeTab` + `currentScreen`)
 
 ### Niveaux — UNE seule échelle
 - **D4 (débutant) / D3 (intermédiaire) / D2 (confirmé)** — cap V1 à D2
-- Tout le reste (`Légende`, `Pro`, `Premier League`, `GOAT`, "personnages humoristiques") = **désactivé pour la V1**
-- Source : `components/ReputationBadge.tsx` (`getLevelFromScore`, `LEVEL_THRESHOLDS`)
+- Tout le reste (`Légende`, `Pro`, `GOAT`, personnages humoristiques) = **désactivé V1 — ne pas remettre**
+- Source de vérité : `components/ReputationBadge.tsx` (`getLevelFromScore`, `LEVEL_THRESHOLDS`)
+- D4/D3/D2 en DB = legacy → normaliser via `normalizeLevel()`
 
 ---
 
@@ -142,19 +121,17 @@ border rgba(0,230,118,0.15)
 ### Règles absolues
 - **Jamais d'appel Supabase direct dans un écran** sans passer par un helper de `lib/`
 - **Jamais désactiver RLS** — toutes les tables sensibles ont des policies
-- Profils seedés ont des IDs commençant par `fa` (`isSeededProfileId` dans `lib/playerStats.ts`)
+- Profils seedés : IDs commençant par `fa` (`isSeededProfileId` dans `lib/playerStats.ts`)
 - Régénérer les types après migration : `npx supabase gen types typescript --project-id <ID> > types/supabase.ts`
 
 ### Edge Functions
 - `delete-account` (RGPD)
 
-### Migrations — ordre cible (chantier 1 finalisé)
+### Migrations en place
 1. `db/store_readiness.sql`
 2. `db/community_profile_and_venues.sql`
 3. `db/security_hardening.sql`
-4. `db/seed_perpignan_v1.sql` ← **à créer en chantier 1, remplace les 3 anciens seeds**
-
-Anciens scripts (`seed_fake_data.sql`, `seed_1000_players.sql`, `seed_matchs_et_fixtures.sql`, `fake_data_consistency.sql`, `launch_realism_pass.sql`) → **à supprimer** dès que le nouveau seed est en place.
+4. `db/seed_perpignan_v1.sql` ✅ (remplace tous les anciens seeds)
 
 ---
 
@@ -168,7 +145,7 @@ Anciens scripts (`seed_fake_data.sql`, `seed_1000_players.sql`, `seed_matchs_et_
   - Privacy : https://benpons66-lgtm.github.io/footmatch-legal/PRIVACY_POLICY.html
   - TOS : https://benpons66-lgtm.github.io/footmatch-legal/TERMS_OF_SERVICE.html
   - Suppression compte : https://benpons66-lgtm.github.io/footmatch-legal/ACCOUNT_DELETION.html
-- **Compte Google Play perso** → règle des 20 testeurs / 14 jours possible (cf. LAUNCH_PLAN_1WEEK.md). À vérifier avant le D-day Android.
+- **Compte Google Play perso** → règle des 20 testeurs / 14 jours (cf. LAUNCH_PLAN_1WEEK.md). À vérifier avant D-day Android.
 
 ---
 
@@ -203,37 +180,34 @@ npx supabase functions deploy delete-account
 
 ## 📋 Règles de développement
 
-1. **Lire le fichier avant de le modifier** (toujours).
-2. **Corrections minimales** — ne pas refactor opportuniste, surtout pas avant le launch.
+1. **Lire le fichier avant de le modifier** (toujours, sans exception).
+2. **Corrections minimales** — pas de refactor, pas de "tant qu'on y est".
 3. **Pas de nouvelle dépendance** sans valider avec Ben.
 4. **TypeScript strict** — pas d'erreur, pas de `any` sans justif.
 5. **Toujours répondre en français.**
 6. **Style** — utiliser `Colors`, `Spacing`, `Radius` du theme. Jamais de hex en dur.
 7. **Tester mentalement** iOS *et* Android avant de livrer.
-8. **Niveaux** : le système de scoring utilise N3/N2/N1/R3… (`ReputationBadge.tsx`) — c'est la seule source de vérité. D4/D3/D2 dans la DB = legacy, normaliser via `normalizeLevel()`.
-9. **Fake data** : `data/fakeData.ts` supprimé. Tout passe par Supabase.
-10. **Cartes joueurs humoristiques** : désactivées V1. Ne pas les remettre.
+8. **Fake data** : tout passe par Supabase. `data/fakeData.ts` n'existe plus.
+9. **Cartes joueurs humoristiques** : désactivées V1. Ne pas les remettre.
 
 ### ⚠️ Garde-fous App.tsx (fichier le plus risqué — 3200+ lignes)
 
-Ces patterns ont causé des bugs réels. Les appliquer sans exception :
-
 | Action | Règle |
 |---|---|
-| Rejoindre un match | Toujours faire `supabase.from('matches').update({ current_players })` **ET** `setSelectedMatch` — les deux, même si un trigger SQL existe |
+| Rejoindre un match | Toujours `supabase.from('matches').update({ current_players })` **ET** `setSelectedMatch` — les deux, même si un trigger SQL existe |
 | Quitter un match | Idem — mettre à jour la base ET l'état local |
-| Auth au démarrage | Ne jamais forcer logout dans le `useEffect` principal sans délai ≥ 1500ms (Supabase charge la session de façon asynchrone) |
-| Modifier le form state | Si tu ajoutes un champ au form, l'ajouter aussi dans l'état initial ET dans le reset après submit |
-| Supprimer un hook/state | Vérifier d'abord que rien ne le référence (grep avant delete) |
-| Modifier une prop de screen | Mettre à jour **tous** les call-sites dans App.tsx (grep `<PlayersScreen`, `<CommunityScreen`, etc.) |
+| Auth au démarrage | Ne jamais forcer logout dans le `useEffect` principal sans délai ≥ 1500ms |
+| Modifier le form state | Tout nouveau champ → dans l'état initial ET dans le reset après submit |
+| Supprimer un hook/state | Grep avant delete — vérifier que rien ne le référence |
+| Modifier une prop de screen | Mettre à jour **tous** les call-sites dans App.tsx |
 
 ### ⚠️ Garde-fous Supabase
 
 | Action | Règle |
 |---|---|
-| Nouveau script SQL | Toujours `ADD COLUMN IF NOT EXISTS`, `DROP POLICY IF EXISTS`, `DELETE WHERE id NOT IN (SELECT id FROM auth.users)` |
-| Supprimer une colonne | Vérifier d'abord que le code ne la lit pas (`grep -r "column_name"`) |
-| Ajouter une table | RLS activé par défaut, policies ajoutées dans le même script |
+| Nouveau script SQL | Toujours `ADD COLUMN IF NOT EXISTS`, `DROP POLICY IF EXISTS` |
+| Supprimer une colonne | Grep d'abord — vérifier que le code ne la lit pas |
+| Ajouter une table | RLS activé par défaut + policies dans le même script |
 | Rejouer un seed | Cleanup défensif d'abord (`db/cleanup_before_reseed.sql`) |
 
 ### Checklist avant de livrer un patch App.tsx
@@ -242,18 +216,19 @@ Ces patterns ont causé des bugs réels. Les appliquer sans exception :
 - [ ] Je n'ai pas supprimé une mise à jour de state sans vérifier pourquoi elle existait
 - [ ] Les boutons modifiés ont toujours un `onPress` non-vide et un `accessibilityLabel`
 - [ ] `form` state : tout nouveau champ est dans l'objet initial ET dans le reset
-- [ ] Supabase : les updates optimistes (setXxx) sont doublés d'un vrai appel DB
+- [ ] Supabase : les updates optimistes (`setXxx`) sont doublés d'un vrai appel DB
+- [ ] Les 5 parcours critiques restent intacts (créer · rejoindre · chat · profil · logout)
 
 ---
 
 ## 🧭 Comment je collabore avec Ben
 
 - **Direct** : pas de blabla, je vais à l'essentiel.
+- **Écran par écran** : Ben envoie les fichiers problématiques, je lis + corrige + on valide avant de passer au suivant.
 - **Diff avant apply** sur tout ce qui est >30 lignes ou touche App.tsx. Petits changements localisés → j'applique direct.
-- **Si je trouve un bug** en lisant : je le signale, je ne le corrige pas en silence.
+- **Si je trouve un bug** en lisant : je le signale en haut de ma réponse avant tout.
 - **Avant de livrer** : je dis ce qui a changé, ce qui est testé, ce qui reste à vérifier.
 - **Budget outils** ~50€/mois — solutions gratuites/low-cost d'abord.
-- **Format** : court, factuel, pas de "résumé final" à rallonge.
 
 ---
 
@@ -266,7 +241,7 @@ Ces patterns ont causé des bugs réels. Les appliquer sans exception :
 
 ---
 
-## 🧰 Skills FootMatch (chargés selon contexte)
+## 🧰 Skills FootMatch
 
 | Skill | Triggers |
 |---|---|
@@ -279,14 +254,16 @@ Ces patterns ont causé des bugs réels. Les appliquer sans exception :
 
 ## 🚀 Roadmap
 
-### V1 — fin mai 2026 (cap actuel)
+### V1 — soumission stores aujourd'hui (16 mai 2026)
 - ✅ App fonctionnelle
-- 🔄 **Chantier 1** : unification fake data
-- 🔄 **Chantier 2** : refonte esthétique "modern football"
-- 🔄 **Chantier 3** : tests device + soumission stores
+- ✅ Fake data unifiée (Perpignan, seed unique)
+- ✅ Bugs fonctionnels critiques corrigés
+- ✅ Refonte esthétique "modern football"
+- 🔄 Derniers bugs mineurs (2-3 ciblés, en cours)
+- 🔄 Build prod EAS + soumission
 
 ### V1.1 — post-launch
-- Bugs P0/P1 remontés
+- Bugs P0/P1 remontés par les premiers utilisateurs
 - Début découpage App.tsx (extraire screens individuels)
 - Analytics basiques
 - Push notifications "match près de toi"
@@ -295,3 +272,4 @@ Ces patterns ont causé des bugs réels. Les appliquer sans exception :
 - Expansion hors 66 (ville par ville)
 - Tournois amateurs organisés
 - Partenariats clubs / mairies
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  

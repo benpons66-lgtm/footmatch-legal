@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\" -maxdepth 3 -type d -name \"*app*\" -o -type d -name \"*src*\" -o -type d -name \"*screens*\" 2>/dev/null | head -20)",
+      "Bash(xargs grep -l \"aperçu\\\\|match.*card\\\\|match.*preview\" -i)",
+      "Bash(xargs grep -l \"joueurs\\\\|gratuit\\\\|payant\\\\|terrain\\\\|⚽\\\\|🏟️\")",
+      "Bash(xargs grep -l \"Card\\\\|card\")",
+      "PowerShell(cmd /c \"dir /a C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\\\\.claude\\\\worktrees\\\\condescending-hodgkin-bc5e07\")"
+    ]
+  }
+}

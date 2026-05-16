@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/c/Users/benpo/Documents/footmatch/.claude/worktrees/eager-lumiere-4e7081\" && ls -la)",
+      "Bash(cd \"/c/Users/benpo/Documents/footmatch\" && ls -la)",
+      "Bash(xargs grep -l \"invite\\\\|Invite\\\\|INVITE\")",
+      "Bash(xargs grep -l \"notification\\\\|push\\\\|expo.* token\")",
+      "Bash(xargs grep -l \"invite\\\\|invitation\")",
+      "Bash(python3 -c \"import json,sys; p=json.load\\(sys.stdin\\); print\\([k for k in p.get\\('exports',{}\\).keys\\(\\) if 'link' in k.lower\\(\\)]\\)\")",
+      "Bash(python3 -c \"import json,sys; p=json.load\\(sys.stdin\\); print\\(p.get\\('version','?'\\)\\)\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

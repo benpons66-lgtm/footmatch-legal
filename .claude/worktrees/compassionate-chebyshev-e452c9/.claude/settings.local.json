@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"/c/Users/benpo/Documents/footmatch\" -type f \\\\\\( -iname \"*card*\" -o -iname \"*swipe*\" -o -iname \"*community*\" -o -iname \"*message*\" -o -iname \"*conversation*\" \\\\\\) 2>/dev/null | head -30)",
+      "Bash(npx tsc *)",
+      "mcp__c00531b0-7559-4028-9305-5157940df4d0__list_projects",
+      "mcp__c00531b0-7559-4028-9305-5157940df4d0__execute_sql"
+    ]
+  }
+}

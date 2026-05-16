@@ -1,14 +1,21 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, StatusBar, Platform,
+  StyleSheet, ActivityIndicator, StatusBar, Platform, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors, Spacing, Radius } from '../constants/theme';
 import { getLevelConfig, getLevelFromScore, getLevelProgress } from '../components/ReputationBadge';
-import { fetchComputedStatsForUsers, getDisplayReputationScore, isSeededProfileId } from '../lib/playerStats';
+import { fetchComputedStatsForUsers, getDisplayReputationScore } from '../lib/playerStats';
 import PlayerCard from '../components/PlayerCard';
+import { getCachedPlayer } from './PlayersScreen';
+
+interface Disponibilite {
+  jour:  string;
+  debut: string;
+  fin:   string;
+}
 
 const SKILL_LABELS: Record<string, string> = {
   vitesse: 'Vitesse',
@@ -30,35 +37,45 @@ interface Props {
   onToggleBlock?: () => void;
 }
 
+interface ProfileData {
+  id:               string;
+  pseudo:           string;
+  reputation_score: number | null;
+  created_at:       string;
+  skill?:           string | null;
+  disponibilites?:  Disponibilite[] | null;
+  city?:            string | null;
+  postal_code?:     string | null;
+}
+
 export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked = false, onBack, onInvite, onToggleBlock }: Props) {
-  const [loading, setLoading] = useState(true);
-  interface ProfileData {
-    id: string;
-    pseudo: string;
-    reputation_score: number | null;
-    created_at: string;
-    skill?: string | null;
-  }
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [stats, setStats] = useState({ matchesPlayed: 0, matchesOrganized: 0, ratingsReceivedCount: 0, goals: 0, assists: 0 });
-  const [displayScore, setDisplayScore] = useState(0);
+  const cached = getCachedPlayer(playerId);
+
+  const [loading, setLoading] = useState(!cached);
+  const [profile, setProfile] = useState<ProfileData | null>(
+    cached ? { id: cached.id, pseudo: cached.pseudo, reputation_score: cached.reputation, created_at: '', skill: null } : null
+  );
+  const [stats, setStats] = useState({
+    matchesPlayed:        cached?.matchesPlayed ?? 0,
+    matchesOrganized:     0,
+    ratingsReceivedCount: 0,
+  });
+  const [displayScore, setDisplayScore] = useState(cached?.reputation ?? 0);
 
   useEffect(() => {
     loadProfile();
-  }, [playerId]);
+  }, [playerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadProfile() {
-    setLoading(true);
     try {
-      // ── Joueur Supabase (seed unifié, id commence par 'fa') ───────────────
       const { data: p } = await supabase
         .from('profiles')
-        .select('id, pseudo, reputation_score, created_at, skill')
+        .select('id, pseudo, reputation_score, created_at, skill, disponibilites, city, postal_code')
         .eq('id', playerId)
         .single();
 
-      if (!p || !isSeededProfileId(p.id)) {
-        setProfile(null);
+      if (!p) {
+        if (!cached) setProfile(null);
         return;
       }
 
@@ -68,8 +85,6 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
         matchesPlayed:        computed?.matchesPlayed ?? 0,
         matchesOrganized:     computed?.matchesOrganized ?? 0,
         ratingsReceivedCount: computed?.ratingsReceivedCount ?? 0,
-        goals:                0,
-        assists:              0,
       });
       setDisplayScore(getDisplayReputationScore(playerId, p.reputation_score, computed));
     } finally {
@@ -108,6 +123,19 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
     ? new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
     : null;
 
+  async function handleSharePlayer() {
+    try {
+      const profileLink = `https://footmatch.app/joueur/${profile.id}`;
+      await Share.share({
+        message: `Découvre ${profile.pseudo} sur FootMatch !\n⚽ ${rank} · ${score} pts\n\n👉 ${profileLink}\n🆓 Télécharge FootMatch — trouve un match en 30 secondes !`,
+        title: `Profil FootMatch — ${profile.pseudo}`,
+        url: profileLink,
+      });
+    } catch {
+      // Partage annulé ou erreur silencieuse
+    }
+  }
+
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" />
@@ -137,9 +165,19 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
         {/* Infos joueur sous la carte */}
         <View style={[s.playerInfoCard, { borderColor: cfg.color + '30' }]}>
           <Text style={[s.pseudo, { color: cfg.color }]}>{profile.pseudo}</Text>
+          {/* Badge niveau — on affiche uniquement le rang (ex: D2) sans "District —" */}
           <View style={[s.levelBadge, { backgroundColor: cfg.bgColor, borderColor: cfg.borderColor }]}>
-            <Text style={[s.levelBadgeText, { color: cfg.color }]}>{cfg.tier} — {rank}</Text>
+            <Text style={[s.levelBadgeText, { color: cfg.color }]}>{rank}</Text>
           </View>
+          {/* Ville et code postal à la place de "Progression" */}
+          {(profile.city || profile.postal_code) && (
+            <View style={s.locationBadge}>
+              <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
+              <Text style={s.locationBadgeText}>
+                {[profile.city, profile.postal_code].filter(Boolean).join(' · ')}
+              </Text>
+            </View>
+          )}
           {profile.skill && (
             <View style={s.skillBadge}>
               <Text style={s.skillBadgeText}>{SKILL_LABELS[profile.skill] ?? profile.skill}</Text>
@@ -158,34 +196,26 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
           {memberSince && <Text style={s.memberSince}>Membre depuis {memberSince}</Text>}
         </View>
 
-        <View style={s.statsRow}>
-          <View style={s.statBox}>
-            <Text style={[s.statN, { color: Colors.green }]}>{stats.matchesPlayed}</Text>
-            <Text style={s.statL}>Matchs joues</Text>
+        {/* ── Disponibilités habituelles (affichage complet) ── */}
+        <View style={s.dispoCard}>
+          <View style={s.dispoHeader}>
+            <Ionicons name="calendar-outline" size={15} color={Colors.green} />
+            <Text style={s.dispoTitle}>Disponibilités habituelles</Text>
           </View>
-          <View style={[s.statBox, s.statBoxMiddle]}>
-            <Text style={[s.statN, { color: Colors.greenLight }]}>{stats.matchesOrganized}</Text>
-            <Text style={s.statL}>Organises</Text>
-          </View>
-          <View style={s.statBox}>
-            <Text style={[s.statN, { color: Colors.green }]}>{stats.ratingsReceivedCount}</Text>
-            <Text style={s.statL}>Matchs notes</Text>
-          </View>
-        </View>
-
-        <View style={s.statsRow}>
-          <View style={s.statBox}>
-            <Text style={[s.statN, { color: Colors.greenLight }]}>{stats.goals}</Text>
-            <Text style={s.statL}>Buts</Text>
-          </View>
-          <View style={[s.statBox, s.statBoxMiddle]}>
-            <Text style={[s.statN, { color: Colors.green }]}>{stats.assists}</Text>
-            <Text style={s.statL}>Passes d.</Text>
-          </View>
-          <View style={s.statBox}>
-            <Text style={[s.statN, { color: Colors.green }]}>{score}</Text>
-            <Text style={s.statL}>Points</Text>
-          </View>
+          {(() => {
+            const dispos: Disponibilite[] = Array.isArray(profile.disponibilites) ? profile.disponibilites : [];
+            if (dispos.length === 0) {
+              return (
+                <Text style={s.dispoEmpty}>Aucun créneau renseigné par ce joueur</Text>
+              );
+            }
+            return dispos.map(d => (
+              <View key={d.jour} style={s.dispoRow}>
+                <Text style={s.dispoJour}>{d.jour}</Text>
+                <Text style={s.dispoCren}>{d.debut} → {d.fin}</Text>
+              </View>
+            ));
+          })()}
         </View>
 
         {currentUserId && currentUserId !== playerId && (
@@ -194,12 +224,19 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
               <Ionicons name="add-circle" size={20} color="#000" />
               <Text style={s.inviteBtnText}>Inviter a un match</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.blockBtn, isBlocked && s.blockBtnActive]} onPress={onToggleBlock} activeOpacity={0.8}>
-              <Ionicons name={isBlocked ? 'checkmark-circle' : 'ban'} size={18} color={isBlocked ? Colors.green : '#FF8A8A'} />
-              <Text style={[s.blockBtnText, isBlocked && s.blockBtnTextActive]}>
-                {isBlocked ? 'Joueur bloque' : 'Bloquer ce joueur'}
-              </Text>
-            </TouchableOpacity>
+            {/* Rangée Partager + Bloquer */}
+            <View style={s.actionRow}>
+              <TouchableOpacity style={s.shareBtn} onPress={handleSharePlayer} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={`Partager le profil de ${profile.pseudo}`}>
+                <Ionicons name="share-social-outline" size={18} color={Colors.green} />
+                <Text style={s.shareBtnText}>Partager</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.blockBtn, isBlocked && s.blockBtnActive]} onPress={onToggleBlock} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={isBlocked ? 'Débloquer ce joueur' : 'Bloquer ce joueur'}>
+                <Ionicons name={isBlocked ? 'checkmark-circle' : 'ban'} size={18} color={isBlocked ? Colors.green : '#FF8A8A'} />
+                <Text style={[s.blockBtnText, isBlocked && s.blockBtnTextActive]}>
+                  {isBlocked ? 'Débloqué' : 'Bloquer'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
 
@@ -221,21 +258,21 @@ const s = StyleSheet.create({
   levelBadgeText: { fontSize: 12, fontWeight: '700' },
   skillBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,230,118,0.08)', borderRadius: Radius.full, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(0,230,118,0.30)' },
   skillBadgeText: { fontSize: 13, fontWeight: '800', color: Colors.greenLight },
+  locationBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  locationBadgeText: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
   memberSince: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
-  statsRow: { flexDirection: 'row', width: '100%', backgroundColor: Colors.card, borderRadius: Radius.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' },
-  statBox: { flex: 1, alignItems: 'center', paddingVertical: 18, gap: 4 },
-  statBoxMiddle: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  statN: { fontSize: 22, fontWeight: '900' },
-  statL: { fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase', textAlign: 'center' },
+  // Disponibilités
+  dispoCard:   { width: '100%', backgroundColor: Colors.card, borderRadius: Radius.lg, borderWidth: 1, borderColor: 'rgba(0,230,118,0.15)', padding: Spacing.lg, gap: 8 },
+  dispoHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  dispoTitle:  { fontSize: 13, fontWeight: '800', color: Colors.text },
+  dispoEmpty:  { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
+  dispoRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dispoJour:   { fontSize: 13, fontWeight: '800', color: Colors.green, width: 34 },
+  dispoCren:   { fontSize: 13, color: Colors.textMuted, fontWeight: '600' },
+  // Styles hérités non supprimés (gardés pour éviter tout crash si référencés ailleurs)
   rankCard: { flexDirection: 'row', alignItems: 'center', gap: 14, width: '100%', borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 1 },
   rankName: { fontSize: 16, fontWeight: '900', textTransform: 'uppercase' },
   rankScore: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  inviteBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.green, borderRadius: Radius.full, paddingVertical: 15, paddingHorizontal: 32, alignSelf: 'center', marginTop: 8 },
-  inviteBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
-  blockBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,138,138,0.10)', borderRadius: Radius.full, paddingVertical: 14, paddingHorizontal: 24, borderWidth: 1, borderColor: 'rgba(255,138,138,0.25)' },
-  blockBtnActive: { backgroundColor: Colors.greenDim, borderColor: Colors.greenBorder },
-  blockBtnText: { fontSize: 14, fontWeight: '800', color: '#FF8A8A' },
-  blockBtnTextActive: { color: Colors.green },
   backBtnCenter: { marginTop: 24, backgroundColor: Colors.greenDim, borderRadius: Radius.full, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: Colors.green + '40' },
   backBtnCenterText: { color: Colors.green, fontWeight: '700' },
 });

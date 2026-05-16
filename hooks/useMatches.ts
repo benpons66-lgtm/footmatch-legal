@@ -134,10 +134,25 @@ export function useMatches(
       );
   }
 
+  // ── Auto-marquer les matchs passés comme joués ────────────────────────────
+  async function autoMarkPlayedMatches(): Promise<void> {
+    try {
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      await supabase
+        .from('matches')
+        .update({ status: 'played' })
+        .lt('scheduled_at', threeHoursAgo)
+        .not('status', 'in', '("cancelled","played")');
+    } catch {
+      // Non critique — l'affichage utilise le temps comme fallback
+    }
+  }
+
   // ── Load all matches ───────────────────────────────────────────────────────
   async function loadMatches(isRefresh = false): Promise<void> {
     if (isRefresh) setRefreshing(true);
     try {
+      await autoMarkPlayedMatches();
       const { data } = await supabase
         .from('matches')
         .select('*, venue:venues(*)')
@@ -250,8 +265,8 @@ export function useMatches(
         if (isSeededProfileId(m.organizer_id)) fallbackIds.add(m.organizer_id);
       });
 
-      const launchMatchCount = (matchesRes.data ?? []).filter((m: Match) =>
-        isLaunchCommunityMatch(m),
+      const launchMatchCount = (matchesRes.data ?? []).filter((m: any) =>
+        isLaunchCommunityMatch(m as Match),
       ).length;
 
       setLiveStats({

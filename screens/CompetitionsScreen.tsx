@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, Alert, StatusBar, Platform, Modal,
@@ -83,7 +83,10 @@ export default function CompetitionsScreen({
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
 
       <View style={hub.header}>
-        <Text style={hub.logo}>🏆 Compétitions</Text>
+        <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
+          <Ionicons name="trophy" size={22} color={Colors.green} />
+          <Text style={hub.logo}>Compétitions</Text>
+        </View>
         <Text style={hub.sub}>Équipes · Championnats · Coupes · Classement</Text>
       </View>
 
@@ -96,7 +99,7 @@ export default function CompetitionsScreen({
           accessibilityRole="button"
           accessibilityLabel="Section Équipes"
         >
-          <Text style={hub.cardEmoji}>👥</Text>
+          <Ionicons name="people" size={36} color={Colors.green} style={{ marginBottom:4 }} />
           <Text style={hub.cardTitle}>Équipes</Text>
           <Text style={hub.cardSub}>Crée ou rejoins une équipe persistante</Text>
           <View style={hub.cardBadge}>
@@ -112,7 +115,7 @@ export default function CompetitionsScreen({
           accessibilityRole="button"
           accessibilityLabel="Section Championnats"
         >
-          <Text style={hub.cardEmoji}>🏅</Text>
+          <Ionicons name="medal" size={36} color={Colors.greenLight} style={{ marginBottom:4 }} />
           <Text style={hub.cardTitle}>Championnats</Text>
           <Text style={hub.cardSub}>Ligue aller-retour, meilleure équipe gagne</Text>
           <View style={hub.cardBadge}>
@@ -128,7 +131,7 @@ export default function CompetitionsScreen({
           accessibilityRole="button"
           accessibilityLabel="Section Coupes"
         >
-          <Text style={hub.cardEmoji}>🏆</Text>
+          <Ionicons name="trophy" size={36} color="#FFD700" style={{ marginBottom:4 }} />
           <Text style={hub.cardTitle}>Coupes</Text>
           <Text style={hub.cardSub}>Élimination directe 4 · 8 · 16 équipes</Text>
           <View style={hub.cardBadge}>
@@ -144,7 +147,7 @@ export default function CompetitionsScreen({
           accessibilityRole="button"
           accessibilityLabel="Section Classement national"
         >
-          <Text style={hub.cardEmoji}>📊</Text>
+          <Ionicons name="bar-chart" size={36} color={Colors.textMuted} style={{ marginBottom:4 }} />
           <Text style={hub.cardTitle}>Classement</Text>
           <Text style={hub.cardSub}>Ranking national hebdomadaire des équipes</Text>
           <View style={hub.cardBadge}>
@@ -258,15 +261,15 @@ function TeamsSection({ currentUserId, onOpen, onBack }: { currentUserId: string
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const { data: memberRows } = await supabase.from('team_members').select('team_id').eq('user_id', currentUserId);
-      const ids = new Set((memberRows ?? []).map((r: { team_id: string }) => r.team_id));
-      setMyTeamIds(ids);
-      const { data } = await supabase
-        .from('teams')
-        .select('*, captain:profiles!captain_id(pseudo,city,postal_code), members:team_members(count)')
-        .order('created_at', { ascending: false })
-        .limit(200);
-      const rows = (data ?? []).map((r: Record<string, unknown>) => ({
+      const [membersRes, teamsRes] = await Promise.all([
+        supabase.from('team_members').select('team_id').eq('user_id', currentUserId),
+        supabase.from('teams')
+          .select('id, name, badge_emoji, preferred_format, wins, draws, losses, captain_id, captain:profiles!captain_id(pseudo, city, postal_code), members:team_members(count)')
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]);
+      setMyTeamIds(new Set((membersRes.data ?? []).map((r: { team_id: string }) => r.team_id)));
+      const rows = (teamsRes.data ?? []).map((r: Record<string, unknown>) => ({
         ...r,
         member_count: Array.isArray(r.members) && r.members.length > 0 ? (r.members[0] as { count: number }).count : 0,
       }));
@@ -274,16 +277,16 @@ function TeamsSection({ currentUserId, onOpen, onBack }: { currentUserId: string
     } finally { setLoading(false); setRefreshing(false); }
   }, [currentUserId]);
 
-  const norm = (s?: string | null) => (s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-  const filtered = query.trim() === ''
-    ? teams
-    : teams.filter(t => {
-        const q = norm(query);
-        return norm(t.name).includes(q)
-          || norm(t.captain?.city).includes(q)
-          || norm(t.captain?.postal_code).includes(q);
-      });
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!q) return teams;
+    return teams.filter(t => {
+      const name = t.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const city = (t.captain?.city ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const cp   = (t.captain?.postal_code ?? '').toLowerCase();
+      return name.includes(q) || city.includes(q) || cp.includes(q);
+    });
+  }, [teams, query]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -323,7 +326,7 @@ function TeamsSection({ currentUserId, onOpen, onBack }: { currentUserId: string
   return (
     <View style={sec.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
-      <SectionHeader title="Équipes" emoji="👥" onBack={onBack} />
+      <SectionHeader title="Équipes" iconName="people" onBack={onBack} />
       <SearchBar value={query} onChangeText={setQuery} placeholder="Nom, ville, code postal..." />
       {loading
         ? <View style={sec.center}><ActivityIndicator color={Colors.green} size="large" /></View>
@@ -451,8 +454,11 @@ function ChampionshipsSection({ currentUserId, onOpen, onBack }: { currentUserId
     } finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  const norm = (s?: string | null) => (s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const filtered = query.trim() === '' ? championships : championships.filter(c => norm(c.name).includes(norm(query)));
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!q) return championships;
+    return championships.filter(c => c.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q));
+  }, [championships, query]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -489,7 +495,7 @@ function ChampionshipsSection({ currentUserId, onOpen, onBack }: { currentUserId
   return (
     <View style={sec.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
-      <SectionHeader title="Championnats" emoji="🏅" onBack={onBack} />
+      <SectionHeader title="Championnats" iconName="medal" onBack={onBack} />
       <SearchBar value={query} onChangeText={setQuery} placeholder="Rechercher par nom..." />
       {loading
         ? <View style={sec.center}><ActivityIndicator color={Colors.green} size="large" /></View>
@@ -591,8 +597,11 @@ function CupsSection({ currentUserId, onOpen, onBack }: { currentUserId: string;
     } finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  const norm = (s?: string | null) => (s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const filtered = query.trim() === '' ? cups : cups.filter(c => norm(c.name).includes(norm(query)));
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!q) return cups;
+    return cups.filter(c => c.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q));
+  }, [cups, query]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -629,7 +638,7 @@ function CupsSection({ currentUserId, onOpen, onBack }: { currentUserId: string;
   return (
     <View style={sec.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
-      <SectionHeader title="Coupes" emoji="🏆" onBack={onBack} />
+      <SectionHeader title="Coupes" iconName="trophy" onBack={onBack} />
       <SearchBar value={query} onChangeText={setQuery} placeholder="Rechercher par nom..." />
       {loading
         ? <View style={sec.center}><ActivityIndicator color={Colors.green} size="large" /></View>
@@ -779,7 +788,7 @@ function RankingSection({ onBack }: { onBack: () => void }) {
   return (
     <View style={sec.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
-      <SectionHeader title="Classement" emoji="📊" onBack={onBack} />
+      <SectionHeader title="Classement" iconName="bar-chart" onBack={onBack} />
       {loading
         ? <View style={sec.center}><ActivityIndicator color={Colors.green} size="large" /></View>
         : (
@@ -862,13 +871,17 @@ function SearchBar({ value, onChangeText, placeholder }: { value: string; onChan
   );
 }
 
-function SectionHeader({ title, emoji, onBack }: { title: string; emoji: string; onBack: () => void }) {
+function SectionHeader({ title, emoji, iconName, onBack }: { title: string; emoji?: string; iconName?: string; onBack: () => void }) {
   return (
     <View style={sec.sectionHdr}>
       <TouchableOpacity onPress={onBack} style={sec.backBtn} accessibilityRole="button" accessibilityLabel="Retour aux compétitions">
         <Ionicons name="arrow-back" size={22} color={Colors.text} />
       </TouchableOpacity>
-      <Text style={sec.sectionHdrEmoji}>{emoji}</Text>
+      {iconName ? (
+        <Ionicons name={iconName as any} size={22} color={Colors.green} />
+      ) : (
+        <Text style={sec.sectionHdrEmoji}>{emoji}</Text>
+      )}
       <Text style={sec.sectionHdrTitle}>{title}</Text>
     </View>
   );

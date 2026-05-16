@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Users/benpo/Documents/footmatch/.claude/worktrees/brave-brown-f37a0b log --oneline)",
+      "Bash(xargs grep *)",
+      "Bash(grep -n \"venue\\\\|, \\\\${\" C:/Users/benpo/Documents/footmatch/App.tsx)"
+    ]
+  }
+}

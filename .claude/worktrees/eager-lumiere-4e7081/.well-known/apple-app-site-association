@@ -1,0 +1,18 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "REMPLACE_PAR_TON_TEAM_ID.fr.footmatch.app"
+        ],
+        "components": [
+          { "/": "/match/*", "comment": "Ouvre l'app sur l'écran du match" },
+          { "/": "/joueur/*", "comment": "Ouvre l'app sur le profil joueur" }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["REMPLACE_PAR_TON_TEAM_ID.fr.footmatch.app"]
+  }
+}

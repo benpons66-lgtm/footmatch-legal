@@ -1,6 +1,6 @@
 // screens/SplashScreen.tsx
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, StatusBar, Image } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -187,6 +187,13 @@ export default function SplashScreen({ onFinish }: Props) {
       <View style={[s.corner, s.cornerTR]} />
       <View style={[s.corner, s.cornerBL]} />
       <View style={[s.corner, s.cornerBR]} />
+
+      {/* Préchargement silencieux du logo PNG — décode le bitmap pendant le splash */}
+      <Image
+        source={require('../assets/logo footmatch transparent.png')}
+        style={s.preload}
+        fadeDuration={0}
+      />
     </Animated.View>
   );
 }
@@ -231,4 +238,5 @@ const s = StyleSheet.create({
   cornerTR:      { top:56, right:20, borderTopWidth:2, borderRightWidth:2 },
   cornerBL:      { bottom:40, left:20, borderBottomWidth:2, borderLeftWidth:2 },
   cornerBR:      { bottom:40, right:20, borderBottomWidth:2, borderRightWidth:2 },
+  preload:       { position:'absolute', width:1, height:1, opacity:0 },
 });

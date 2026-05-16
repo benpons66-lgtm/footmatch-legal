@@ -1,0 +1,9 @@
+# Netlify Redirects — FootMatch
+# Route /match/{uuid} et /joueur/{uuid} vers les landing pages HTML
+# Le 200 = "rewrite" (pas de redirection visible) — l'URL reste propre dans le navigateur
+
+/match/*    /match.html   200
+/joueur/*   /joueur.html  200
+
+# Sert les fichiers .well-known sans extension sans problème
+/.well-known/*  /.well-known/:splat  200

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FootMatch — Modèles d'emojis</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f0f1a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 22px;
+      color: #a0a0c0;
+      margin-bottom: 32px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .column {
+      background: #1a1a2e;
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid #2a2a45;
+    }
+    .column h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #6060a0;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #2a2a45;
+    }
+    .column h2 span {
+      font-size: 10px;
+      display: block;
+      margin-top: 4px;
+      color: #404060;
+    }
+
+    /* ---- Carte de match ---- */
+    .match-card {
+      background: #12122a;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      border: 1px solid #222240;
+    }
+    .match-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .match-badge {
+      background: #252550;
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .match-badge.urgent {
+      background: #3a1515;
+      color: #ff6b6b;
+      border: 1px solid #ff4444;
+    }
+    .match-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .match-info {
+      font-size: 12px;
+      color: #7070a0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .match-info span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ---- Barre de nav ---- */
+    .nav-bar {
+      background: #12122a;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-around;
+      border: 1px solid #222240;
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: #606090;
+      cursor: pointer;
+    }
+    .nav-item.active {
+      color: #7c7cff;
+    }
+    .nav-icon { font-size: 20px; line-height: 1; }
+    .nav-icon.small { font-size: 16px; }
+
+    /* ---- Skills ---- */
+    .skills-row {
+      background: #12122a;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid #222240;
+    }
+    .skills-row h3 { font-size: 12px; color: #6060a0; margin-bottom: 10px; }
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .skill-chip {
+      background: #1e1e40;
+      border-radius: 8px;
+      padding: 6px 4px;
+      text-align: center;
+      font-size: 10px;
+      color: #a0a0c0;
+    }
+    .skill-chip .icon { font-size: 16px; display: block; margin-bottom: 3px; }
+    .skill-chip .icon.small { font-size: 13px; }
+
+    /* ---- Rank badges ---- */
+    .ranks-row {
+      background: #12122a;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid #222240;
+    }
+    .ranks-row h3 { font-size: 12px; color: #6060a0; margin-bottom: 10px; }
+    .rank-list { display: flex; flex-direction: column; gap: 6px; }
+    .rank-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #c0c0e0;
+    }
+    .rank-icon { font-size: 14px; width: 20px; text-align: center; }
+    .rank-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* ---- Label section ---- */
+    .section-label {
+      font-size: 10px;
+      color: #404060;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 8px 0 6px;
+    }
+
+    /* FA icon size fix */
+    .fa-icon { font-size: 15px; color: #7c7cff; }
+    .fa-icon.orange { color: #ff9f43; }
+    .fa-icon.red { color: #ff6b6b; }
+    .fa-icon.green { color: #26de81; }
+    .fa-icon.gray { color: #7070a0; }
+    .fa-icon.gold { color: #ffd700; }
+    .fa-icon.teal { color: #48dbfb; }
+  </style>
+</head>
+<body>
+  <h1>FootMatch — Comparaison des styles d'emojis</h1>
+
+  <div class="columns">
+
+    <!-- ============ OPTION A : Emojis actuels ============ -->
+    <div class="column">
+      <h2>Option A — Emojis actuels
+        <span>Ce que tu as maintenant</span>
+      </h2>
+
+      <!-- Nav bar -->
+      <div class="section-label">Navigation</div>
+      <div class="nav-bar">
+        <div class="nav-item active">
+          <div class="nav-icon">⚽</div>
+          <span>Matchs</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">🏆</div>
+          <span>Compét.</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">💬</div>
+          <span>Chat</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">👤</div>
+          <span>Profil</span>
+        </div>
+      </div>
+
+      <!-- Carte match -->
+      <div class="section-label">Carte de match</div>
+      <div class="match-card">
+        <div class="match-header">
+          <div class="match-badge">⚽ Five</div>
+          <div class="match-badge urgent">⚡ Urgent</div>
+        </div>
+        <div class="match-title">Match ce soir</div>
+        <div class="match-info">
+          <span>📍 Stade Jean-Bouin, Paris</span>
+          <span>👥 3/10 joueurs</span>
+          <span>✅ Confirmé</span>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="section-label">Skills</div>
+      <div class="skills-row">
+        <div class="skills-grid">
+          <div class="skill-chip"><span class="icon">⚡</span>Vitesse</div>
+          <div class="skill-chip"><span class="icon">🎯</span>Dribbles</div>
+          <div class="skill-chip"><span class="icon">💪</span>Physique</div>
+          <div class="skill-chip"><span class="icon">🎨</span>Technique</div>
+          <div class="skill-chip"><span class="icon">⬆️</span>Tête</div>
+          <div class="skill-chip"><span class="icon">🧤</span>Gardien</div>
+          <div class="skill-chip"><span class="icon">👁️</span>Vision</div>
+          <div class="skill-chip"><span class="icon">🦶</span>2 Pieds</div>
+        </div>
+      </div>
+
+      <!-- Ranks -->
+      <div class="section-label">Rangs</div>
+      <div class="ranks-row">
+        <div class="rank-list">
+          <div class="rank-item"><span class="rank-icon">🔵</span> Division 4</div>
+          <div class="rank-item"><span class="rank-icon">🟢</span> National 2</div>
+          <div class="rank-item"><span class="rank-icon">⭐</span> Ligue 1</div>
+          <div class="rank-item"><span class="rank-icon">🦁</span> Premier League</div>
+          <div class="rank-item"><span class="rank-icon">🏆</span> Champions League</div>
+          <div class="rank-item"><span class="rank-icon">🌟</span> Euro</div>
+          <div class="rank-item"><span class="rank-icon">🌍</span> Coupe du Monde</div>
+          <div class="rank-item"><span class="rank-icon">🐐</span> GOAT</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ OPTION B : Nouveaux emojis ============ -->
+    <div class="column">
+      <h2>Option B — Nouveaux emojis
+        <span>Style football moderne & épuré</span>
+      </h2>
+
+      <!-- Nav bar -->
+      <div class="section-label">Navigation</div>
+      <div class="nav-bar">
+        <div class="nav-item active">
+          <div class="nav-icon">🥅</div>
+          <span>Matchs</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">🏅</div>
+          <span>Compét.</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">💭</div>
+          <span>Chat</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">🪪</div>
+          <span>Profil</span>
+        </div>
+      </div>
+
+      <!-- Carte match -->
+      <div class="section-label">Carte de match</div>
+      <div class="match-card">
+        <div class="match-header">
+          <div class="match-badge">⚽ Five</div>
+          <div class="match-badge urgent">🚨 Urgent</div>
+        </div>
+        <div class="match-title">Match ce soir</div>
+        <div class="match-info">
+          <span>🗺️ Stade Jean-Bouin, Paris</span>
+          <span>🧑‍🤝‍🧑 3/10 joueurs</span>
+          <span>🟢 Confirmé</span>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="section-label">Skills</div>
+      <div class="skills-row">
+        <div class="skills-grid">
+          <div class="skill-chip"><span class="icon">💨</span>Vitesse</div>
+          <div class="skill-chip"><span class="icon">🕹️</span>Dribbles</div>
+          <div class="skill-chip"><span class="icon">🏋️</span>Physique</div>
+          <div class="skill-chip"><span class="icon">🪄</span>Technique</div>
+          <div class="skill-chip"><span class="icon">🔝</span>Tête</div>
+          <div class="skill-chip"><span class="icon">🥅</span>Gardien</div>
+          <div class="skill-chip"><span class="icon">🔭</span>Vision</div>
+          <div class="skill-chip"><span class="icon">👟</span>2 Pieds</div>
+        </div>
+      </div>
+
+      <!-- Ranks -->
+      <div class="section-label">Rangs</div>
+      <div class="ranks-row">
+        <div class="rank-list">
+          <div class="rank-item"><span class="rank-icon">🔵</span> Division 4</div>
+          <div class="rank-item"><span class="rank-icon">🟩</span> National 2</div>
+          <div class="rank-item"><span class="rank-icon">💫</span> Ligue 1</div>
+          <div class="rank-item"><span class="rank-icon">🦁</span> Premier League</div>
+          <div class="rank-item"><span class="rank-icon">🏆</span> Champions League</div>
+          <div class="rank-item"><span class="rank-icon">🌠</span> Euro</div>
+          <div class="rank-item"><span class="rank-icon">🌍</span> Coupe du Monde</div>
+          <div class="rank-item"><span class="rank-icon">👑</span> GOAT</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ OPTION C : Icônes vectorielles ============ -->
+    <div class="column">
+      <h2>Option C — Icônes vectorielles
+        <span>Style app pro · Ionicons / MaterialCommunity</span>
+      </h2>
+
+      <!-- Nav bar -->
+      <div class="section-label">Navigation</div>
+      <div class="nav-bar">
+        <div class="nav-item active">
+          <div class="nav-icon small"><i class="fa-solid fa-futbol fa-icon"></i></div>
+          <span>Matchs</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon small"><i class="fa-solid fa-trophy fa-icon gray"></i></div>
+          <span>Compét.</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon small"><i class="fa-solid fa-comment fa-icon gray"></i></div>
+          <span>Chat</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon small"><i class="fa-solid fa-user fa-icon gray"></i></div>
+          <span>Profil</span>
+        </div>
+      </div>
+
+      <!-- Carte match -->
+      <div class="section-label">Carte de match</div>
+      <div class="match-card">
+        <div class="match-header">
+          <div class="match-badge">
+            <i class="fa-solid fa-futbol fa-icon" style="font-size:11px"></i> Five
+          </div>
+          <div class="match-badge urgent">
+            <i class="fa-solid fa-bolt" style="font-size:11px"></i> Urgent
+          </div>
+        </div>
+        <div class="match-title">Match ce soir</div>
+        <div class="match-info">
+          <span><i class="fa-solid fa-location-dot fa-icon" style="font-size:11px"></i> Stade Jean-Bouin, Paris</span>
+          <span><i class="fa-solid fa-users fa-icon" style="font-size:11px"></i> 3/10 joueurs</span>
+          <span><i class="fa-solid fa-circle-check fa-icon green" style="font-size:11px"></i> Confirmé</span>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="section-label">Skills</div>
+      <div class="skills-row">
+        <div class="skills-grid">
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-wind fa-icon" style="color:#a0a0ff"></i></span>Vitesse
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-person-running fa-icon" style="color:#a0a0ff"></i></span>Dribbles
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-dumbbell fa-icon" style="color:#a0a0ff"></i></span>Physique
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-wand-magic-sparkles fa-icon" style="color:#a0a0ff"></i></span>Tech.
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-arrow-up fa-icon" style="color:#a0a0ff"></i></span>Tête
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-hand fa-icon" style="color:#a0a0ff"></i></span>Gardien
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-eye fa-icon" style="color:#a0a0ff"></i></span>Vision
+          </div>
+          <div class="skill-chip">
+            <span class="icon small"><i class="fa-solid fa-shoe-prints fa-icon" style="color:#a0a0ff"></i></span>2 Pieds
+          </div>
+        </div>
+      </div>
+
+      <!-- Ranks -->
+      <div class="section-label">Rangs</div>
+      <div class="ranks-row">
+        <div class="rank-list">
+          <div class="rank-item">
+            <span class="rank-dot" style="background:#4a90d9"></span> Division 4
+          </div>
+          <div class="rank-item">
+            <span class="rank-dot" style="background:#26de81"></span> National 2
+          </div>
+          <div class="rank-item">
+            <i class="fa-solid fa-star fa-icon gold" style="font-size:12px;width:20px;text-align:center"></i> Ligue 1
+          </div>
+          <div class="rank-item">
+            <i class="fa-solid fa-crown fa-icon" style="color:#c084fc;font-size:12px;width:20px;text-align:center"></i> Premier League
+          </div>
+          <div class="rank-item">
+            <i class="fa-solid fa-trophy fa-icon gold" style="font-size:12px;width:20px;text-align:center"></i> Champions League
+          </div>
+          <div class="rank-item">
+            <i class="fa-solid fa-earth-europe fa-icon teal" style="font-size:12px;width:20px;text-align:center"></i> Euro
+          </div>
+          <div class="rank-item">
+            <i class="fa-solid fa-globe fa-icon" style="color:#f9ca24;font-size:12px;width:20px;text-align:center"></i> Coupe du Monde
+          </div>
+          <div class="rank-item">
+            <i class="fa-solid fa-infinity fa-icon red" style="font-size:12px;width:20px;text-align:center"></i> GOAT
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p style="text-align:center;color:#303050;font-size:11px;margin-top:24px">
+    Rendu approximatif — les emojis varient selon Android / iOS
+  </p>
+</body>
+</html>

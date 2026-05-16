@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.tsx$|\\\\.ts$\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python -m http.server 3460)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__get_page_text",
+      "mcp__Claude_in_Chrome__tabs_create_mcp",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3459/cards-district.html)",
+      "Bash(npx serve *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3460/cards-district.html)",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3461/cards-district.html)",
+      "PowerShell(Start-Process node -ArgumentList \"-e\", \"const http=require\\('http'\\),fs=require\\('fs'\\),path=require\\('path'\\);http.createServer\\(\\(q,r\\)=>{const f=path.join\\('C:/Users/benpo/Documents/footmatch/design',q.url==='/'?'index.html':q.url\\);try{r.writeHead\\(200,{'Content-Type':'text/html'}\\);r.end\\(fs.readFileSync\\(f\\)\\)}catch\\(e\\){r.writeHead\\(404\\);r.end\\(\\)}}\\).listen\\(3462,\\(\\)=>{}\\)\" -WindowStyle Hidden; Start-Sleep 2; \\(Invoke-WebRequest http://localhost:3462/cards-district.html -UseBasicParsing\\).StatusCode)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3456/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3457/)",
+      "mcp__Claude_in_Chrome__select_browser",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

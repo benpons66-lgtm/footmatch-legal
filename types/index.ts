@@ -60,6 +60,7 @@ export interface Match {
   avg_rating?: number | null;
   rating_count?: number;
   distanceKm?: number | null;
+  venue_name?: string | null;
 }
 
 // ─── Joueur dans un match ──────────────────────────────────────────────────────

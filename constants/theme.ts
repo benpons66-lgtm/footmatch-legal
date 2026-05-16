@@ -5,6 +5,9 @@ export const Colors = {
   greenLight:   '#B9F6CA',                    // vert clair (menthe)
   greenDim:     'rgba(0,230,118,0.12)',
   greenBorder:  'rgba(0,230,118,0.22)',
+  cyan:         '#4FFFEF',                    // cyan néon (City Stade)
+  cyanDim:      'rgba(79,255,239,0.10)',
+  cyanBorder:   'rgba(79,255,239,0.22)',
   white:        '#FFFFFF',
   whiteDim:     'rgba(255,255,255,0.08)',
   // Alias pour compatibilité → tout ramené aux verts/blancs
@@ -40,17 +43,17 @@ export const Typography = {
 
 export const MATCH_TYPES = {
   five: {
-    label: 'Five', emoji: '⚡',
+    label: 'Five', emoji: '⚡', iconName: 'flash',
     color: '#00E676', dimColor: 'rgba(0,230,118,0.12)',
     borderColor: 'rgba(0,230,118,0.22)', maxPlayers: 10,
   },
   city: {
-    label: 'City Stade', emoji: '🏟️',
-    color: '#B9F6CA', dimColor: 'rgba(185,246,202,0.10)',
-    borderColor: 'rgba(185,246,202,0.22)', maxPlayers: 8,
+    label: 'City Stade', emoji: '🏟️', iconName: 'business',
+    color: '#4FFFEF', dimColor: 'rgba(79,255,239,0.10)',
+    borderColor: 'rgba(79,255,239,0.22)', maxPlayers: 8,
   },
   eleven: {
-    label: 'Foot à 11', emoji: '⚽',
+    label: 'Foot à 11', emoji: '⚽', iconName: 'football',
     color: '#FFFFFF', dimColor: 'rgba(255,255,255,0.07)',
     borderColor: 'rgba(255,255,255,0.15)', maxPlayers: 22,
   },

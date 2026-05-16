@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>FootMatch · Carte D1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+body {
+  min-height: 100vh;
+  background: #061006;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Pitch ────────────────────────────────────────────────────────────── */
+#pitch {
+  position: fixed; inset: 0; z-index: 0;
+}
+#pitch svg { width: 100%; height: 100%; }
+#pitch::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 70% at 50% 50%,
+    rgba(4,12,4,0.50) 0%,
+    rgba(4,12,4,0.82) 100%
+  );
+}
+
+/* ── Stadium side-floodlights ────────────────────────────────────────── */
+.flood {
+  position: fixed; top: 50%; z-index: 0;
+  width: 340px; height: 560px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.28;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.flood-l { left: -120px; background: radial-gradient(ellipse, #90FF90, transparent 65%); }
+.flood-r { right:-120px; background: radial-gradient(ellipse, #70FF70, transparent 65%); }
+
+/* ── Wrapper ─────────────────────────────────────────────────────────── */
+.wrapper {
+  position: relative;
+  z-index: 1;
+  width: 348px;
+  padding-top: 44px; /* room for protruding badge */
+}
+
+/* ── Football badge ──────────────────────────────────────────────────── */
+.ball-badge {
+  position: absolute;
+  top: 0; left: 50%; transform: translateX(-50%);
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 35%, #1C381C, #0A1A0A);
+  border: 2.5px solid transparent;
+  background-clip: padding-box;
+  box-shadow:
+    0 0 0 2.5px rgba(195,150,0,0.55),
+    0 0 0 5px  rgba(195,150,0,0.14),
+    0 8px 28px rgba(0,0,0,0.70),
+    0 0 30px   rgba(195,150,0,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 40px;
+  z-index: 5;
+  line-height: 1;
+}
+
+/* ── Card shell ──────────────────────────────────────────────────────── */
+.card {
+  background: #0C1C0C;
+  border-radius: 22px;
+  border: 1.5px solid rgba(0,230,118,0.35);
+  box-shadow:
+    0 0  0 1px rgba(0,230,118,0.07),
+    /* inner edge glow */
+    inset 0 0 28px rgba(0,230,118,0.05),
+    /* outer aura */
+    0 0 32px rgba(0,230,118,0.20),
+    0 0 70px rgba(0,230,118,0.10),
+    0 40px 80px rgba(0,0,0,0.90);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Diagonal jersey texture */
+.card::before {
+  content: '';
+  position: absolute; inset: 0; z-index: 0;
+  background: repeating-linear-gradient(
+    -54deg,
+    transparent 0, transparent 15px,
+    rgba(0,230,118,0.025) 15px, rgba(0,230,118,0.025) 17px
+  );
+  pointer-events: none;
+}
+/* Top green shimmer line */
+.card::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px; z-index: 1;
+  background: linear-gradient(90deg, transparent 5%, rgba(0,230,118,0.65) 50%, transparent 95%);
+}
+
+.card > * { position: relative; z-index: 2; }
+
+/* ── TOP ROW ─────────────────────────────────────────────────────────── */
+.top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 22px 0;
+}
+
+/* Score */
+.score-block {}
+.score-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 90px;
+  line-height: 0.85;
+  color: #00E676;
+  text-shadow:
+    0 0 14px rgba(0,230,118,0.80),
+    0 0 40px rgba(0,230,118,0.45),
+    0 0 80px rgba(0,230,118,0.20);
+  letter-spacing: 1px;
+}
+.score-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 5px;
+  color: rgba(0,230,118,0.40);
+  text-transform: uppercase;
+  margin-top: 3px;
+  padding-left: 2px;
+}
+
+/* Level */
+.level-block {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
+  padding-top: 2px;
+}
+.tier-badge {
+  font-size: 9px; font-weight: 800; letter-spacing: 2px;
+  color: #00E676;
+  padding: 3px 10px;
+  border: 1.5px solid rgba(0,230,118,0.38);
+  border-radius: 100px;
+  background: rgba(0,230,118,0.07);
+  text-transform: uppercase;
+}
+.level-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 52px; line-height: 1;
+  color: #00E676;
+  letter-spacing: 2px;
+  text-shadow:
+    0 0 12px rgba(0,230,118,0.75),
+    0 0 36px rgba(0,230,118,0.35);
+}
+.level-shield {
+  width: 34px; height: 34px;
+  background: rgba(0,230,118,0.06);
+  border: 1.5px solid rgba(0,230,118,0.22);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+  box-shadow: 0 0 10px rgba(0,230,118,0.10);
+}
+
+/* ── HERO ZONE ──────────────────────────────────────────────────────── */
+.hero-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 10px;
+}
+
+.bolt-wrap {
+  filter:
+    drop-shadow(0 0 14px rgba(255,180,0,0.80))
+    drop-shadow(0 0 36px rgba(255,120,0,0.50))
+    drop-shadow(0 8px 24px rgba(0,0,0,0.60));
+}
+
+/* ── DIVIDER + NAME ──────────────────────────────────────────────────── */
+.name-zone {
+  text-align: center;
+  padding: 0 22px 16px;
+}
+
+.divider {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+}
+.divider-line {
+  flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,230,118,0.22));
+}
+.divider-line.r {
+  background: linear-gradient(90deg, rgba(0,230,118,0.22), transparent);
+}
+.divider-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(200,155,0,0.80);
+  box-shadow: 0 0 8px rgba(200,155,0,0.70), 0 0 16px rgba(200,120,0,0.40);
+  flex-shrink: 0;
+}
+
+.player-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px; letter-spacing: 4px; line-height: 1;
+  color: #FFFFFF;
+  text-shadow: 0 2px 16px rgba(0,0,0,0.50);
+  margin-bottom: 5px;
+}
+.player-sub {
+  font-size: 11px; font-weight: 700; letter-spacing: 3px;
+  color: #00E676; opacity: 0.65;
+  text-transform: uppercase;
+}
+
+/* ── STATS ───────────────────────────────────────────────────────────── */
+.stats { padding: 0; }
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(0,230,118,0.07);
+}
+
+.s-ico {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.35);
+  border: 1.5px solid rgba(0,230,118,0.20);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  color: #00E676;
+  box-shadow:
+    0 0 14px rgba(0,230,118,0.08),
+    inset 0 0 8px rgba(0,230,118,0.04);
+}
+.s-ico svg { width: 24px; height: 24px; }
+
+.s-text { flex: 1; min-width: 0; }
+.s-name { font-size: 15px; font-weight: 700; color: #FFFFFF; line-height: 1.25; }
+.s-sub  { font-size: 11px; font-weight: 400; color: rgba(180,220,195,0.38); margin-top: 2px; }
+
+.s-val {
+  font-size: 32px; font-weight: 800;
+  color: #00E676;
+  text-shadow: 0 0 12px rgba(0,230,118,0.55);
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Notes row – right side */
+.s-notes-right {
+  display: flex; flex-direction: column; align-items: flex-end;
+  flex-shrink: 0;
+}
+.s-notes-top {
+  display: flex; align-items: center; gap: 5px;
+}
+.s-star {
+  font-size: 22px; line-height: 1;
+  color: #FFB800;
+  text-shadow: 0 0 10px rgba(255,184,0,0.65);
+}
+.s-notes-avg {
+  font-size: 32px; font-weight: 800;
+  color: #00E676;
+  text-shadow: 0 0 12px rgba(0,230,118,0.55);
+  letter-spacing: -1px; line-height: 1;
+}
+.s-notes-count {
+  font-size: 11px; font-weight: 500;
+  color: rgba(180,220,195,0.38);
+  margin-top: 2px;
+}
+
+/* ── FOOTER ──────────────────────────────────────────────────────────── */
+.card-footer {
+  padding: 14px 20px 22px;
+  border-top: 1px solid rgba(0,230,118,0.07);
+}
+
+.prog-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 9px;
+}
+
+.prog-pill {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 15px; letter-spacing: 1.5px;
+  padding: 5px 14px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.prog-pill.cur {
+  color: #00E676;
+  border: 1.5px solid rgba(0,230,118,0.45);
+  background: rgba(0,230,118,0.08);
+  box-shadow: 0 0 10px rgba(0,230,118,0.12);
+}
+.prog-pill.nxt {
+  color: rgba(0,230,118,0.35);
+  border: 1.5px solid rgba(0,230,118,0.15);
+  background: transparent;
+}
+
+.prog-track {
+  flex: 1; height: 7px; border-radius: 100px;
+  background: rgba(0,230,118,0.10);
+  position: relative; overflow: visible;
+}
+.prog-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 100px;
+  background: linear-gradient(90deg, rgba(0,200,100,0.7), #00E676);
+  box-shadow: 0 0 12px rgba(0,230,118,0.55);
+}
+.prog-dot {
+  position: absolute; right: -5px; top: 50%;
+  transform: translateY(-50%);
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #00E676;
+  border: 2px solid #0C1C0C;
+  box-shadow: 0 0 10px rgba(0,230,118,0.80), 0 0 20px rgba(0,230,118,0.40);
+}
+
+.prog-info {
+  text-align: center;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+  color: #00E676; opacity: 0.62;
+}
+</style>
+</head>
+<body>
+
+<!-- Pitch -->
+<div id="pitch" aria-hidden="true">
+  <svg viewBox="0 0 1680 1050" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="grass" x="105" y="49" width="84" height="952" patternUnits="userSpaceOnUse">
+        <rect width="84" height="952" fill="#000"/>
+        <rect width="42" height="952" fill="rgba(255,255,255,0.018)"/>
+      </pattern>
+      <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"  stop-color="#1A4818" stop-opacity="0.50"/>
+        <stop offset="100%" stop-color="#1A4818" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="1680" height="1050" fill="#060E06"/>
+    <rect x="105" y="49" width="1470" height="952" fill="url(#grass)"/>
+    <ellipse cx="840" cy="525" rx="560" ry="420" fill="url(#glow)"/>
+    <g stroke="rgba(255,255,255,0.18)" stroke-width="2" fill="none">
+      <rect x="105" y="49" width="1470" height="952"/>
+      <line x1="840" y1="49" x2="840" y2="1001"/>
+      <circle cx="840" cy="525" r="128"/>
+      <circle cx="840" cy="525" r="5" fill="rgba(255,255,255,0.25)" stroke="none"/>
+      <rect x="105" y="241" width="231" height="568"/>
+      <rect x="105" y="397" width="77"  height="256"/>
+      <circle cx="259" cy="525" r="4" fill="rgba(255,255,255,0.25)" stroke="none"/>
+      <path d="M336 451.7 A128 128 0 0 1 336 598.3"/>
+      <rect x="54"  y="474" width="51" height="102" stroke-width="1.5" stroke="rgba(255,255,255,0.10)"/>
+      <path d="M105 63  A14 14 0 0 0 119 49"/>
+      <path d="M105 987 A14 14 0 0 1 119 1001"/>
+      <rect x="1344" y="241" width="231" height="568"/>
+      <rect x="1498" y="397" width="77"  height="256"/>
+      <circle cx="1421" cy="525" r="4" fill="rgba(255,255,255,0.25)" stroke="none"/>
+      <path d="M1344 451.7 A128 128 0 0 0 1344 598.3"/>
+      <rect x="1575" y="474" width="51" height="102" stroke-width="1.5" stroke="rgba(255,255,255,0.10)"/>
+      <path d="M1561 49  A14 14 0 0 1 1575 63"/>
+      <path d="M1575 987 A14 14 0 0 1 1561 1001"/>
+    </g>
+  </svg>
+</div>
+
+<div class="flood flood-l" aria-hidden="true"></div>
+<div class="flood flood-r" aria-hidden="true"></div>
+
+<!-- ══════════════ CARD ══════════════ -->
+<div class="wrapper">
+
+  <!-- Football badge protruding from top -->
+  <div class="ball-badge">⚽</div>
+
+  <div class="card" id="card">
+
+    <!-- TOP: Score | Level -->
+    <div class="top-row">
+      <div class="score-block">
+        <div class="score-num">65</div>
+        <div class="score-lbl">Score</div>
+      </div>
+      <div class="level-block">
+        <div class="tier-badge">District</div>
+        <div class="level-num">D1</div>
+        <div class="level-shield">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;color:#00E676">
+            <path d="M12 2 L20 6 L20 12 C20 17 16 21 12 22 C8 21 4 17 4 12 L4 6 Z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- HERO: Golden lightning bolt -->
+    <div class="hero-zone">
+      <div class="bolt-wrap">
+        <svg width="88" height="128" viewBox="0 0 88 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="lg1" x1="44" y1="0" x2="44" y2="128" gradientUnits="userSpaceOnUse">
+              <stop offset="0%"   stop-color="#FFE84D"/>
+              <stop offset="40%"  stop-color="#FFAA00"/>
+              <stop offset="100%" stop-color="#CC5500"/>
+            </linearGradient>
+            <linearGradient id="lg2" x1="20" y1="10" x2="52" y2="70" gradientUnits="userSpaceOnUse">
+              <stop offset="0%"   stop-color="rgba(255,255,210,0.65)"/>
+              <stop offset="100%" stop-color="rgba(255,255,210,0)"/>
+            </linearGradient>
+          </defs>
+          <!-- Outer bolt shape -->
+          <path d="M56 4 L10 70 H40 L32 124 L82 54 H50 Z"
+            fill="url(#lg1)"
+            stroke="rgba(255,220,60,0.35)" stroke-width="1.5" stroke-linejoin="round"/>
+          <!-- Inner highlight -->
+          <path d="M52 12 L18 66 H44 L38 108 L72 60 H46 Z"
+            fill="url(#lg2)" opacity="0.55"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- NAME zone -->
+    <div class="name-zone">
+      <div class="divider">
+        <div class="divider-line"></div>
+        <div class="divider-dot"></div>
+        <div class="divider-line r"></div>
+      </div>
+      <div class="player-name">BENTEN66</div>
+      <div class="player-sub">District &nbsp;·&nbsp; D1</div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats">
+
+      <div class="stat-row">
+        <div class="s-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="13" rx="1"/>
+            <line x1="2" y1="10.5" x2="22" y2="10.5"/>
+            <line x1="2" y1="15" x2="22" y2="15"/>
+            <line x1="8" y1="6" x2="8" y2="19"/>
+            <line x1="14" y1="6" x2="14" y2="19"/>
+            <circle cx="11" cy="13" r="1.8" fill="currentColor" stroke="none" opacity="0.75"/>
+          </svg>
+        </div>
+        <div class="s-text">
+          <div class="s-name">Buts marqués</div>
+          <div class="s-sub">Total de buts</div>
+        </div>
+        <div class="s-val">63</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="s-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+            <circle cx="10.5" cy="13.5" r="7.5"/>
+            <circle cx="10.5" cy="13.5" r="3.5"/>
+            <circle cx="10.5" cy="13.5" r="1" fill="currentColor" stroke="none"/>
+            <line x1="16" y1="8" x2="21" y2="3"/>
+            <polyline points="17.5,3 21,3 21,6.5"/>
+          </svg>
+        </div>
+        <div class="s-text">
+          <div class="s-name">Passes décisives</div>
+          <div class="s-sub">Passes menant à un but</div>
+        </div>
+        <div class="s-val">41</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="s-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9.5"/>
+            <path d="M12 2.5 C9.5 6 9.5 18 12 21.5"/>
+            <path d="M12 2.5 C14.5 6 14.5 18 12 21.5"/>
+            <path d="M3 9 Q12 11 21 9"/>
+            <path d="M3 15 Q12 13 21 15"/>
+          </svg>
+        </div>
+        <div class="s-text">
+          <div class="s-name">Matchs joués</div>
+          <div class="s-sub">Total de matchs</div>
+        </div>
+        <div class="s-val">91</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="s-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="17" rx="2"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="7" y1="13.5" x2="10" y2="13.5"/>
+            <line x1="7" y1="17" x2="10" y2="17"/>
+            <line x1="14" y1="13.5" x2="17" y2="13.5"/>
+            <line x1="14" y1="17" x2="17" y2="17"/>
+          </svg>
+        </div>
+        <div class="s-text">
+          <div class="s-name">Matchs organisés</div>
+          <div class="s-sub">Matchs créés</div>
+        </div>
+        <div class="s-val">23</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="s-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>
+          </svg>
+        </div>
+        <div class="s-text">
+          <div class="s-name">Notes données</div>
+          <div class="s-sub">Évaluations laissées</div>
+        </div>
+        <div class="s-notes-right">
+          <div class="s-notes-top">
+            <span class="s-star">★</span>
+            <span class="s-notes-avg">4,7</span>
+          </div>
+          <div class="s-notes-count">76 notes</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="card-footer">
+      <div class="prog-row">
+        <span class="prog-pill cur">D1</span>
+        <div class="prog-track">
+          <div class="prog-fill" style="width:84%">
+            <div class="prog-dot"></div>
+          </div>
+        </div>
+        <span class="prog-pill nxt">R3</span>
+      </div>
+      <div class="prog-info">2 100 pts &nbsp;·&nbsp; 400 pts avant R3</div>
+    </div>
+
+  </div><!-- .card -->
+</div><!-- .wrapper -->
+
+<script>
+const wrapper = document.querySelector('.wrapper');
+const card    = document.getElementById('card');
+let raf;
+
+wrapper.addEventListener('mousemove', e => {
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => {
+    const r  = card.getBoundingClientRect();
+    const dx = (e.clientX - r.left  - r.width  / 2) / (r.width  / 2);
+    const dy = (e.clientY - r.top   - r.height / 2) / (r.height / 2);
+    card.style.transition = 'none';
+    card.style.transform  = `perspective(900px) rotateY(${dx*8}deg) rotateX(${-dy*8}deg) translateZ(14px)`;
+  });
+});
+
+wrapper.addEventListener('mouseleave', () => {
+  cancelAnimationFrame(raf);
+  card.style.transition = 'transform .55s cubic-bezier(.22,.68,0,1.2)';
+  card.style.transform  = '';
+});
+</script>
+</body>
+</html>

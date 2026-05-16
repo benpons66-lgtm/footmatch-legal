@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>FootMatch · Créer un match</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ── Tokens ──────────────────────────────────────────────────────────── */
+  :root {
+    --bg: #080D08;
+    --bg2: #0F160F;
+    --bg3: #172017;
+    --card: #131913;
+    --green: #00E676;
+    --green-dark: #00A854;
+    --green-dim: rgba(0,230,118,0.10);
+    --green-border: rgba(0,230,118,0.32);
+    --text: #E8F5E8;
+    --text-muted: #5A7A5A;
+    --text-dim: #3A5A3A;
+    --border: rgba(0,230,118,0.15);
+    --danger: #FF5252;
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 18px;
+    --radius-full: 999px;
+    --shadow-green: 0 12px 36px -12px rgba(0,230,118,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 80% -10%, rgba(0,230,118,0.10), transparent 60%) var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.4;
+  }
+
+  /* ── Layout shell ────────────────────────────────────────────────────── */
+  .shell {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100%;
+    padding: 0 0 140px;
+    position: relative;
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────────── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 18px 8px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: linear-gradient(180deg, var(--bg) 70%, transparent);
+    backdrop-filter: blur(8px);
+  }
+  .icon-btn {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--green);
+    display: grid; place-items: center;
+    cursor: pointer;
+    transition: transform .15s ease, background .15s;
+  }
+  .icon-btn:hover { background: var(--bg3); transform: translateY(-1px); }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .topbar-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 1.6px; }
+  .topbar-title .live-dot {
+    display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    margin-right: 8px; vertical-align: middle;
+    box-shadow: 0 0 0 0 rgba(0,230,118,0.6);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(0,230,118,0.6);} 100%{box-shadow:0 0 0 12px rgba(0,230,118,0);} }
+
+  /* ── Hero ────────────────────────────────────────────────────────────── */
+  .hero {
+    margin: 4px 18px 18px;
+    padding: 18px 20px;
+    background:
+      linear-gradient(135deg, rgba(0,230,118,0.10), rgba(0,168,84,0.04)) ,
+      var(--bg2);
+    border: 1px solid var(--green-border);
+    border-radius: var(--radius-lg);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    inset: -40px -40px auto auto;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(0,230,118,0.20), transparent 65%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px; letter-spacing: 2px;
+    margin: 0 0 4px;
+    color: var(--text);
+  }
+  .hero p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .hero .stamp {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 4px 10px;
+    background: var(--green-dim);
+    border: 1px solid var(--green-border);
+    border-radius: var(--radius-full);
+    color: var(--green);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+  }
+
+  /* ── Section ─────────────────────────────────────────────────────────── */
+  section {
+    margin: 0 18px 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    transition: border-color .2s;
+  }
+  section:focus-within { border-color: var(--green-border); }
+
+  .section-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 13px;
+    color: var(--green);
+    letter-spacing: 1.6px;
+    margin-right: 8px;
+  }
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 1.2px;
+    margin: 0;
+  }
+  .section-hint { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+
+  label.lbl {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 14px 0 6px;
+  }
+
+  /* ── Type cards ──────────────────────────────────────────────────────── */
+  .type-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .type-card {
+    position: relative;
+    aspect-ratio: 1 / 1.05;
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: transform .12s, border-color .15s, background .15s;
+    overflow: hidden;
+  }
+  .type-card:hover { transform: translateY(-2px); border-color: var(--green-border); }
+  .type-card .ico {
+    width: 38px; height: 38px;
+    color: var(--text-muted);
+    transition: color .15s;
+  }
+  .type-card .ico svg { width: 100%; height: 100%; stroke-width: 1.6; }
+  .type-card .name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px; letter-spacing: 1.1px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.05;
+  }
+  .type-card .px {
+    font-size: 9px; font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+  .type-card[aria-selected="true"] {
+    background: linear-gradient(180deg, var(--green-dim), transparent);
+    border-color: var(--green);
+    box-shadow: var(--shadow-green);
+  }
+  .type-card[aria-selected="true"] .name { color: var(--green); }
+  .type-card[aria-selected="true"] .ico { color: var(--green); }
+  .type-card[aria-selected="true"] .px { color: var(--green); }
+  .type-card[aria-selected="true"]::before {
+    content: ''; position: absolute; top: 8px; right: 8px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 3px rgba(0,230,118,0.20);
+  }
+
+  /* ── Pills (date / time) ────────────────────────────────────────────── */
+  .pills {
+    display: flex; gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .pills::-webkit-scrollbar { display: none; }
+  .pill {
+    flex: 0 0 auto;
+    padding: 9px 14px;
+    border-radius: var(--radius-full);
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .pill:hover { color: var(--text); border-color: rgba(0,230,118,0.30); }
+  .pill[aria-selected="true"] {
+    background: var(--green-dim);
+    border-color: var(--green);
+    color: var(--green);
+  }
+  .pill .pill-day { display: block; font-size: 9px; font-weight: 800; letter-spacing: 1.2px; opacity: .7; }
+  .pill .pill-num { display: block; font-family: 'Bebas Neue', sans-serif; font-size: 18px; line-height: 1; }
+
+  /* ── Date / Time inputs ──────────────────────────────────────────────── */
+  .duo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .input, .textarea {
+    width: 100%;
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: 600 14px 'Inter', sans-serif;
+    padding: 12px 14px;
+    transition: border-color .15s, background .15s;
+  }
+  .input:focus, .textarea:focus {
+    outline: none;
+    border-color: var(--green);
+    background: var(--bg3);
+  }
+  .textarea { resize: none; min-height: 80px; line-height: 1.5; }
+  .input::placeholder, .textarea::placeholder { color: var(--text-dim); }
+
+  .input-with-icon { position: relative; }
+  .input-with-icon .ico {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    color: var(--text-muted); width: 16px; height: 16px;
+  }
+  .input-with-icon .input { padding-left: 40px; }
+
+  /* ── Stepper ─────────────────────────────────────────────────────────── */
+  .stepper {
+    display: flex; align-items: center;
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .step-btn {
+    width: 52px; height: 52px;
+    background: transparent;
+    border: 0;
+    color: var(--green);
+    font-size: 22px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .step-btn:hover { background: var(--green-dim); }
+  .step-btn:disabled { color: var(--text-dim); cursor: not-allowed; background: transparent; }
+  .step-display {
+    flex: 1;
+    text-align: center;
+  }
+  .step-display .num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 30px;
+    color: var(--text);
+    line-height: 1;
+  }
+  .step-display .lbl-sub {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+  }
+  .quick-roster {
+    display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;
+  }
+  .roster-chip {
+    padding: 5px 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .roster-chip:hover { color: var(--green); border-color: var(--green-border); }
+
+  /* ── Toggle (Gratuit / Payant, Privé / Public) ──────────────────────── */
+  .seg {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 0;
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    padding: 4px;
+  }
+  .seg-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: 800 13px 'Inter', sans-serif;
+    padding: 11px 0;
+    cursor: pointer;
+    border-radius: 8px;
+    letter-spacing: 0.4px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: all .15s;
+  }
+  .seg-btn:hover { color: var(--text); }
+  .seg-btn[aria-selected="true"] {
+    background: var(--green);
+    color: #000;
+    box-shadow: 0 4px 10px -4px rgba(0,230,118,0.45);
+  }
+
+  /* ── Price input (visible quand Payant) ──────────────────────────────── */
+  .price-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 8px;
+    margin-top: 12px;
+    align-items: center;
+  }
+  .price-input {
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: 800 18px 'Bebas Neue', sans-serif;
+    letter-spacing: 1.5px;
+    padding: 12px 14px;
+    text-align: center;
+    transition: border-color .15s;
+  }
+  .price-input:focus { outline: none; border-color: var(--green); }
+  .price-quick {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font: 700 12px 'Inter', sans-serif;
+    padding: 12px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .price-quick:hover { color: var(--green); border-color: var(--green-border); }
+  .hidden { display: none !important; }
+
+  /* ── Auto-suggest (terrain) ──────────────────────────────────────────── */
+  .suggest {
+    margin-top: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .suggest-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 13px;
+    background: var(--bg2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .suggest-item:hover { border-color: var(--green-border); }
+  .suggest-item[aria-selected="true"] {
+    border-color: var(--green);
+    background: var(--green-dim);
+  }
+  .suggest-pin {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--bg3);
+    color: var(--green);
+    display: grid; place-items: center;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+  }
+  .suggest-pin svg { width: 16px; height: 16px; }
+  .suggest-text { flex: 1; min-width: 0; }
+  .suggest-name { font-size: 14px; font-weight: 800; color: var(--text); }
+  .suggest-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .suggest-meta {
+    flex-shrink: 0;
+    text-align: right;
+  }
+  .suggest-meta .badge {
+    background: var(--green-dim);
+    border: 1px solid var(--green-border);
+    color: var(--green);
+    border-radius: var(--radius-full);
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+  }
+  .suggest-meta .dist { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+
+  /* ── CTA fixe ────────────────────────────────────────────────────────── */
+  .cta-bar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 14px 18px 22px;
+    background: linear-gradient(0deg, var(--bg) 60%, transparent);
+    z-index: 50;
+  }
+  .cta-bar-inner { max-width: 480px; margin: 0 auto; }
+  .cta {
+    width: 100%;
+    background: linear-gradient(180deg, var(--green), var(--green-dark));
+    color: #000;
+    border: 0;
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    font: 900 14px 'Inter', sans-serif;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: var(--shadow-green);
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .cta:hover { transform: translateY(-1px); box-shadow: 0 16px 40px -12px rgba(0,230,118,0.5); }
+  .cta:active { transform: translateY(0); }
+  .cta svg { width: 18px; height: 18px; stroke-width: 2.4; }
+
+  .cta-meta {
+    display: flex; justify-content: center; gap: 14px;
+    margin-top: 8px;
+    font-size: 11px; color: var(--text-muted); font-weight: 600;
+  }
+  .cta-meta b { color: var(--green); }
+
+  /* ── Summary line under sections ────────────────────────────────────── */
+  .summary {
+    font-size: 11px;
+    color: var(--green);
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    margin-top: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .summary .check {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--green);
+    color: #000;
+    display: grid; place-items: center;
+    font-size: 10px;
+    font-weight: 900;
+    flex-shrink: 0;
+  }
+
+  /* ── Responsive niceties ─────────────────────────────────────────────── */
+  @media (max-width: 380px) {
+    .type-card .name { font-size: 14px; }
+    section { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Header ────────────────────────────────────────── -->
+  <div class="topbar">
+    <button class="icon-btn" aria-label="Retour">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="topbar-title"><span class="live-dot"></span>NOUVEAU MATCH</div>
+    <div style="width:40px"></div>
+  </div>
+
+  <!-- ── Hero ──────────────────────────────────────────── -->
+  <div class="hero">
+    <h1>Lance un match en 30 secondes</h1>
+    <p>Choisis ton format, ton terrain et tes coéquipiers — la communauté FootMatch s'occupe du reste.</p>
+    <span class="stamp">⚡ Perpignan · 1 247 joueurs actifs</span>
+  </div>
+
+  <!-- ── 1. Type de match ─────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">01</span><span class="section-title">FORMAT</span></div>
+      <span class="section-hint">Choisis le type</span>
+    </div>
+    <div class="type-grid" role="radiogroup" aria-label="Type de match">
+      <div class="type-card" role="radio" aria-checked="false" aria-selected="true" data-type="five" data-max="10">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3 L14 8 L19 8 L15 12 L17 17 L12 14 L7 17 L9 12 L5 8 L10 8 Z"/></svg>
+        </div>
+        <div class="name">FIVE</div>
+        <div class="px">5v5 · 10 J</div>
+      </div>
+      <div class="type-card" role="radio" aria-checked="false" data-type="city" data-max="14">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 11h18M9 11v8M15 11v8"/></svg>
+        </div>
+        <div class="name">CITY STADE</div>
+        <div class="px">7v7 · 14 J</div>
+      </div>
+      <div class="type-card" role="radio" aria-checked="false" data-type="eleven" data-max="22">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="1.5"/><circle cx="12" cy="12" r="2.5"/><path d="M2 12h20M7 5v14M17 5v14"/></svg>
+        </div>
+        <div class="name">FOOT À 11</div>
+        <div class="px">11v11 · 22 J</div>
+      </div>
+    </div>
+    <div class="summary"><span class="check">✓</span>Five sélectionné · 10 joueurs max</div>
+  </section>
+
+  <!-- ── 2. Quand ? ──────────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">02</span><span class="section-title">QUAND</span></div>
+      <span class="section-hint">Date & heure</span>
+    </div>
+    <label class="lbl">Date</label>
+    <div class="pills" role="radiogroup" aria-label="Date">
+      <button class="pill" aria-selected="false"><span class="pill-day">AUJ.</span><span class="pill-num">30</span></button>
+      <button class="pill" aria-selected="true"><span class="pill-day">DEM.</span><span class="pill-num">01</span></button>
+      <button class="pill" aria-selected="false"><span class="pill-day">VEN</span><span class="pill-num">02</span></button>
+      <button class="pill" aria-selected="false"><span class="pill-day">SAM</span><span class="pill-num">03</span></button>
+      <button class="pill" aria-selected="false"><span class="pill-day">DIM</span><span class="pill-num">04</span></button>
+      <button class="pill" aria-selected="false"><span class="pill-day">LUN</span><span class="pill-num">05</span></button>
+    </div>
+    <label class="lbl">Heure</label>
+    <div class="pills" role="radiogroup" aria-label="Heure">
+      <button class="pill" aria-selected="false">12:00</button>
+      <button class="pill" aria-selected="false">17:00</button>
+      <button class="pill" aria-selected="false">18:30</button>
+      <button class="pill" aria-selected="true">19:30</button>
+      <button class="pill" aria-selected="false">20:00</button>
+      <button class="pill" aria-selected="false">21:00</button>
+      <button class="pill" aria-selected="false">22:00</button>
+    </div>
+    <div class="duo">
+      <input class="input" placeholder="01/05/2026" value="01/05/2026" />
+      <input class="input" placeholder="19:30" value="19:30" />
+    </div>
+    <div class="summary"><span class="check">✓</span>Vendredi 01 mai · 19:30 — coup d'envoi dans 2 jours</div>
+  </section>
+
+  <!-- ── 3. Où ? ────────────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">03</span><span class="section-title">TERRAIN</span></div>
+      <span class="section-hint">Perpignan & alentours</span>
+    </div>
+    <div class="input-with-icon">
+      <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+      <input class="input" placeholder="Nom, ville ou adresse..." value="five" />
+    </div>
+    <div class="suggest">
+      <div class="suggest-item" aria-selected="true">
+        <div class="suggest-pin"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></div>
+        <div class="suggest-text">
+          <div class="suggest-name">Le Five Perpignan</div>
+          <div class="suggest-sub">Av. de Grande Bretagne · Perpignan</div>
+        </div>
+        <div class="suggest-meta">
+          <span class="badge">VALIDÉ</span>
+          <div class="dist">2.1 km</div>
+        </div>
+      </div>
+      <div class="suggest-item">
+        <div class="suggest-pin"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></div>
+        <div class="suggest-text">
+          <div class="suggest-name">Five Concept Cabestany</div>
+          <div class="suggest-sub">Rue des Frères Lumière · Cabestany</div>
+        </div>
+        <div class="suggest-meta">
+          <span class="badge">VALIDÉ</span>
+          <div class="dist">5.3 km</div>
+        </div>
+      </div>
+      <div class="suggest-item">
+        <div class="suggest-pin"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></div>
+        <div class="suggest-text">
+          <div class="suggest-name">Urban Soccer Canet</div>
+          <div class="suggest-sub">Z.A. le Mas Balande · Canet-en-Roussillon</div>
+        </div>
+        <div class="suggest-meta">
+          <span class="badge">VALIDÉ</span>
+          <div class="dist">11.4 km</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 4. Joueurs ────────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">04</span><span class="section-title">EFFECTIF</span></div>
+      <span class="section-hint">Joueurs max</span>
+    </div>
+    <div class="stepper">
+      <button class="step-btn" aria-label="Moins de joueurs">−</button>
+      <div class="step-display">
+        <div class="num">10</div>
+        <div class="lbl-sub">Joueurs · Five 5v5</div>
+      </div>
+      <button class="step-btn" aria-label="Plus de joueurs">+</button>
+    </div>
+    <div class="quick-roster">
+      <button class="roster-chip">5</button>
+      <button class="roster-chip">8</button>
+      <button class="roster-chip">10</button>
+      <button class="roster-chip">12</button>
+      <button class="roster-chip">14</button>
+      <button class="roster-chip">22</button>
+    </div>
+  </section>
+
+  <!-- ── 5. Tarif ─────────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">05</span><span class="section-title">TARIF</span></div>
+      <span class="section-hint">Gratuit ou partagé</span>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="Tarif">
+      <button class="seg-btn" aria-selected="true" data-pricing="free">🆓 GRATUIT</button>
+      <button class="seg-btn" aria-selected="false" data-pricing="paid">💶 PAYANT</button>
+    </div>
+
+    <div class="price-row hidden" id="price-row">
+      <input class="price-input" placeholder="0 €" type="number" inputmode="numeric" />
+      <button class="price-quick">3€</button>
+      <button class="price-quick">5€</button>
+      <button class="price-quick">8€</button>
+    </div>
+
+    <div class="summary" id="price-summary"><span class="check">✓</span>Aucun frais — pure communauté</div>
+  </section>
+
+  <!-- ── 6. Détails ────────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">06</span><span class="section-title">DÉTAILS</span></div>
+      <span class="section-hint">Optionnel</span>
+    </div>
+    <label class="lbl">Titre du match</label>
+    <input class="input" value="Five du jeudi soir" placeholder="Ex: Five du jeudi soir" />
+    <label class="lbl">Description</label>
+    <textarea class="textarea" placeholder="Niveau, infos pratiques, équipement…">Niveau D3/D2 — Maillot clair conseillé. RDV 15 min avant.</textarea>
+  </section>
+
+  <!-- ── 7. Visibilité ─────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div><span class="section-num">07</span><span class="section-title">VISIBILITÉ</span></div>
+      <span class="section-hint">Qui peut rejoindre ?</span>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="Visibilité">
+      <button class="seg-btn" aria-selected="true">🌐 PUBLIC</button>
+      <button class="seg-btn" aria-selected="false">🔒 PRIVÉ</button>
+    </div>
+    <div class="summary"><span class="check">✓</span>Tout joueur de Perpignan & alentours peut s'inscrire</div>
+  </section>
+
+  <!-- ── CTA bar ─────────────────────────────────── -->
+  <div class="cta-bar">
+    <div class="cta-bar-inner">
+      <button class="cta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+        Lancer le match
+      </button>
+      <div class="cta-meta">
+        <span><b>10</b> joueurs</span>
+        <span>·</span>
+        <span><b>Vendredi 19:30</b></span>
+        <span>·</span>
+        <span><b>Gratuit</b></span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── Type cards ── single-select
+  document.querySelectorAll('.type-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.type-card').forEach(c => c.setAttribute('aria-selected', 'false'));
+      card.setAttribute('aria-selected', 'true');
+      const stepNum = document.querySelector('.step-display .num');
+      const stepLbl = document.querySelector('.step-display .lbl-sub');
+      const max = card.dataset.max;
+      const type = card.dataset.type;
+      stepNum.textContent = max;
+      const lblMap = { five: 'Joueurs · Five 5v5', city: 'Joueurs · City 7v7', eleven: 'Joueurs · Foot à 11' };
+      stepLbl.textContent = lblMap[type] || 'Joueurs';
+    });
+  });
+
+  // ── Pills (date / time)
+  document.querySelectorAll('.pills').forEach(group => {
+    group.addEventListener('click', e => {
+      const t = e.target.closest('.pill');
+      if (!t) return;
+      group.querySelectorAll('.pill').forEach(p => p.setAttribute('aria-selected','false'));
+      t.setAttribute('aria-selected','true');
+    });
+  });
+
+  // ── Stepper
+  const stepDisplay = document.querySelector('.step-display .num');
+  const [stepMinus, stepPlus] = document.querySelectorAll('.step-btn');
+  stepMinus.addEventListener('click', () => {
+    let n = parseInt(stepDisplay.textContent, 10);
+    if (n > 2) stepDisplay.textContent = n - 1;
+  });
+  stepPlus.addEventListener('click', () => {
+    let n = parseInt(stepDisplay.textContent, 10);
+    if (n < 22) stepDisplay.textContent = n + 1;
+  });
+  document.querySelectorAll('.roster-chip').forEach(chip => {
+    chip.addEventListener('click', () => { stepDisplay.textContent = chip.textContent.trim(); });
+  });
+
+  // ── Pricing toggle
+  const priceRow = document.getElementById('price-row');
+  const priceSummary = document.getElementById('price-summary');
+  document.querySelectorAll('.seg-btn[data-pricing]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.seg-btn[data-pricing]').forEach(x => x.setAttribute('aria-selected','false'));
+      b.setAttribute('aria-selected','true');
+      const isPaid = b.dataset.pricing === 'paid';
+      priceRow.classList.toggle('hidden', !isPaid);
+      priceSummary.innerHTML = isPaid
+        ? '<span class="check">✓</span>Précise le prix par joueur ci-dessus'
+        : '<span class="check">✓</span>Aucun frais — pure communauté';
+    });
+  });
+
+  // ── Price quick chips
+  document.querySelectorAll('.price-quick').forEach(b => {
+    b.addEventListener('click', () => {
+      const input = document.querySelector('.price-input');
+      input.value = b.textContent.replace('€','').trim();
+      input.focus();
+    });
+  });
+
+  // ── Visibility seg
+  document.querySelectorAll('.seg').forEach(seg => {
+    seg.addEventListener('click', e => {
+      const t = e.target.closest('.seg-btn');
+      if (!t || t.dataset.pricing) return;
+      seg.querySelectorAll('.seg-btn').forEach(x => x.setAttribute('aria-selected','false'));
+      t.setAttribute('aria-selected','true');
+    });
+  });
+</script>
+</body>
+</html>

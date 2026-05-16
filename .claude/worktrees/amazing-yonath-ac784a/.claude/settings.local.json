@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\" && find . -type f \\\\\\( -name \"*.js\" -o -name \"*.jsx\" -o -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.html\" -o -name \"*.json\" \\\\\\) | grep -v node_modules | grep -v \".claude\" | grep -v \"legal\")",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -Pn \"[^\\\\x00-\\\\x7F]{2,}\" App.tsx)",
+      "Bash(grep -v \"emoji:\\\\|'emoji'\\\\|placeholder\\\\|message:\\\\|Alert\\\\.\\\\|Share\\\\.\\\\|//\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

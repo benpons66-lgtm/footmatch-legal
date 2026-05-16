@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(js|jsx|ts|tsx\\)$\")",
+      "Bash(git ls-tree *)",
+      "Bash(cd .. && ls -la)",
+      "Bash(cd ../.. && pwd && ls -la)",
+      "Bash(cd /c/Users/benpo/Documents/footmatch && ls -la)",
+      "Bash(grep -r \"match\\\\|Match\\\\|MATCH\" /c/Users/benpo/Documents/footmatch/hooks/ /c/Users/benpo/Documents/footmatch/screens/ /c/Users/benpo/Documents/footmatch/components/ ! -path \"*/node_modules/*\")"
+    ]
+  }
+}

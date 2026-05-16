@@ -2,6 +2,7 @@
   "expo": {
     "name": "FootMatch",
     "slug": "footmatch",
+    "scheme": "footmatch",
     "version": "1.0.0",
     "runtimeVersion": "1.0.0",
     "orientation": "portrait",
@@ -24,7 +25,7 @@
     ],
 
     "privacy": "public",
-    "privacyPolicyUrl": "https://footmatch.fr/privacy-policy",
+    "privacyPolicyUrl": "https://benpons66-lgtm.github.io/footmatch-legal/PRIVACY_POLICY.html",
 
     "platforms": ["ios", "android", "web"],
 
@@ -32,6 +33,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "fr.footmatch.app",
       "buildNumber": "1",
+      "associatedDomains": ["applinks:footmatch.app"],
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "FootMatch utilise ta position pour trouver les matchs et terrains les plus proches de toi.",
         "NSCameraUsageDescription": "FootMatch utilise la caméra pour te permettre de prendre une photo de profil ou de proposer un terrain.",
@@ -95,6 +97,17 @@
       "predictiveBackGestureEnabled": false,
       "blockedPermissions": [
         "RECORD_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "footmatch.app", "pathPrefix": "/match" },
+            { "scheme": "https", "host": "footmatch.app", "pathPrefix": "/joueur" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
 

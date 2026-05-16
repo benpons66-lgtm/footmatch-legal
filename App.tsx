@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { ScrollView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, RefreshControl, Switch, Share, FlatList, KeyboardAvoidingView, Platform, StatusBar, Image, Dimensions, ActivityIndicator, Modal, Animated } from 'react-native';
+import { ScrollView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, RefreshControl, Switch, Share, FlatList, KeyboardAvoidingView, Platform, StatusBar, Image, Dimensions, ActivityIndicator, Modal, Animated, Keyboard, Linking } from 'react-native';
 import * as Location from 'expo-location';
+import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, Radius, MATCH_TYPES } from './constants/theme';
 import { supabase } from './lib/supabase';
@@ -23,7 +24,7 @@ import CupDetailScreen from './screens/CupDetailScreen';
 import type { Team, Cup } from './types';
 import AvatarPicker, { MANGA_AVATARS } from './components/AvatarPicker';
 import PlayerCard from './components/PlayerCard';
-import PlayersScreen from './screens/PlayersScreen';
+import PlayersScreen, { prefetchPlayers, seedPlayerCache } from './screens/PlayersScreen';
 import PlayerProfileScreen from './screens/PlayerProfileScreen';
 import NetInfo from '@react-native-community/netinfo';
 import * as Notifications from 'expo-notifications';
@@ -45,14 +46,14 @@ const FORBIDDEN_TERMS = [
 
 // ─── Skill system ─────────────────────────────────────────────────────────────
 export const SKILLS = [
-  { key: 'vitesse',   label: 'Vitesse',   emoji: '⚡' },
-  { key: 'dribbles',  label: 'Dribbles',  emoji: '🎯' },
-  { key: 'physique',  label: 'Physique',  emoji: '💪' },
-  { key: '2pieds',    label: '2 Pieds',   emoji: '🦶' },
-  { key: 'technique', label: 'Technique', emoji: '🎨' },
-  { key: 'tete',      label: 'Tête',      emoji: '⬆️' },
-  { key: 'gardien',   label: 'Gardien',   emoji: '🧤' },
-  { key: 'vision',    label: 'Vision',    emoji: '👁️' },
+  { key: 'vitesse',   label: 'Vitesse',   emoji: '⚡', iconName: 'flash'            },
+  { key: 'dribbles',  label: 'Dribbles',  emoji: '⚽', iconName: 'football'         },
+  { key: 'physique',  label: 'Physique',  emoji: '💪', iconName: 'barbell'          },
+  { key: '2pieds',    label: '2 Pieds',   emoji: '🦶', iconName: 'footsteps'        },
+  { key: 'technique', label: 'Technique', emoji: '🎯', iconName: 'brush'            },
+  { key: 'tete',      label: 'Tête',      emoji: '⬆️', iconName: 'arrow-up-circle' },
+  { key: 'gardien',   label: 'Gardien',   emoji: '🧤', iconName: 'hand-right'       },
+  { key: 'vision',    label: 'Vision',    emoji: '👁️', iconName: 'eye'              },
 ];
 
 // Niveau calculé automatiquement depuis le score de réputation
@@ -163,11 +164,14 @@ export default function App() {
   const [pseudo, setPseudo] = useState('');
   const [registerCity, setRegisterCity] = useState('');
   const [registerPostalCode, setRegisterPostalCode] = useState('');
+  // Disponibilités saisies à l'inscription — format : { jour, debut, fin }[]
+  const [registerDisponibilites, setRegisterDisponibilites] = useState<{jour:string;debut:string;fin:string}[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [venues, setVenues] = useState<any[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
+  const [editingMatch, setEditingMatch] = useState<any>(null);
   const [matchPlayers, setMatchPlayers] = useState<any[]>([]);
   const [myMatches, setMyMatches] = useState<string[]>([]);
   const [myCreatedMatches, setMyCreatedMatches] = useState<any[]>([]);
@@ -177,8 +181,10 @@ export default function App() {
   const [newMessage, setNewMessage] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
   const [userLocation, setUserLocation] = useState<{latitude:number,longitude:number}|null>(null);
+  const [userCityName, setUserCityName] = useState<string>('Perpignan');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [playersSearchSignal, setPlayersSearchSignal] = useState(0);
   const [proposals, setProposals] = useState<any[]>([]);
   const [myVotes, setMyVotes] = useState<Record<string,boolean>>({});
   const [venuePhoto, setVenuePhoto] = useState<{uri:string,base64:string|null}|null>(null);
@@ -190,6 +196,8 @@ export default function App() {
   const [profileStats, setProfileStats] = useState({ matchesPlayed:0, matchesOrganized:0, avgRating:null as number|null, ratingsGiven:0, noShows:0 });
   const [personalStatsDraft, setPersonalStatsDraft] = useState({ goals: '0', assists: '0' });
   const flatListRef = useRef<FlatList>(null);
+  const profileScrollRef = useRef<ScrollView>(null);
+  const scrollToRatingsRef = useRef(false);
   const [avatarLoaded, setAvatarLoaded] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [consentGiven, setConsentGiven] = useState(false);
@@ -203,12 +211,13 @@ export default function App() {
   const [selectedCup, setSelectedCup] = useState<Cup | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [userSkill, setUserSkill] = useState<string | null>(null);
+  const [userDisponibilites, setUserDisponibilites] = useState<{jour:string;debut:string;fin:string}[]>([]);
   const [guestMode, setGuestMode] = useState(false);
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [venueSearch, setVenueSearch] = useState('');
   const [showVenuePicker, setShowVenuePicker] = useState(false);
   const [matchesLoaded, setMatchesLoaded] = useState(false);
-  const [liveStats, setLiveStats] = useState({ players: 0, matchesTonight: 0 });
+  const [liveStats, setLiveStats] = useState({ players: 0, matchesTonight: 0, matchesCompleted: 0 });
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [communityMessages, setCommunityMessages] = useState<any[]>([]);
   const [communityMessage, setCommunityMessage] = useState('');
@@ -217,6 +226,11 @@ export default function App() {
   const [locationDenied, setLocationDenied] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitedPlayerId, setInvitedPlayerId] = useState<string | null>(null);
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const homeLogoFade = useRef(new Animated.Value(0)).current;
+  const loadCacheRef = useRef<Record<string, number>>({});
 
   function formatFrenchDate(date: Date) {
     const day = String(date.getDate()).padStart(2, '0');
@@ -260,6 +274,14 @@ export default function App() {
     else { action(); }
   }
 
+  function handleNavigate(s: string) {
+    if (guestMode && (s === 'profile' || s === 'community')) {
+      setShowGuestModal(true);
+    } else {
+      setScreen(s as any);
+    }
+  }
+
   function isLaunchCommunityMatch(match: any) {
     if (!match) return false;
     return (
@@ -289,7 +311,7 @@ export default function App() {
           },
         };
       })
-      .filter((player: any) => !player.user?.id || isLaunchCommunityProfile(player.user.id, statsByUser[player.user.id]) || player.user.id === currentUser?.id);
+;
   }
 
   async function sendCommunityMessage() {
@@ -356,10 +378,35 @@ export default function App() {
     // Délai de 2s pour laisser Supabase restaurer la session depuis le storage
     // avant de vérifier — évite un faux logout au démarrage.
     setTimeout(ensureValidSession, 2000);
-    const unsubscribe = NetInfo.addEventListener(state => {
+    const netUnsub = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected ?? true);
     });
-    return () => unsubscribe();
+
+    // ── Deep links : footmatch://match/{uuid} ou https://footmatch.app/match/{uuid}
+    const handleDeepLink = (url: string) => {
+      const m = url.match(/\/match\/([0-9a-f-]{36})/i);
+      if (!m) return;
+      const matchId = m[1];
+      supabase.from('matches').select('*, venue:venues(*)').eq('id', matchId).single()
+        .then(({ data }) => { if (data) loadMatchDetail(data); });
+    };
+    Linking.getInitialURL().then(url => { if (url) handleDeepLink(url); });
+    const linkingSub = Linking.addEventListener('url', e => handleDeepLink(e.url));
+
+    // ── Tap sur notification push → ouvre le match correspondant
+    const notifTapSub = Notifications.addNotificationResponseReceivedListener(response => {
+      const d = response.notification.request.content.data as any;
+      if (d?.matchId) {
+        supabase.from('matches').select('*, venue:venues(*)').eq('id', d.matchId).single()
+          .then(({ data }) => { if (data) loadMatchDetail(data); });
+      }
+    });
+
+    return () => {
+      netUnsub();
+      linkingSub.remove();
+      notifTapSub.remove();
+    };
   }, []);
 
   // Détecte un mismatch entre store local (currentUser) et session Supabase :
@@ -417,6 +464,80 @@ export default function App() {
     }
   }
 
+  function showToast(msg: string) {
+    setToastMsg(msg);
+    toastAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(toastAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(2500),
+      Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setToastMsg(null));
+  }
+
+  function renderToast() {
+    if (!toastMsg) return null;
+    return (
+      <Animated.View pointerEvents="none" style={{
+        position: 'absolute', bottom: 110, left: 20, right: 20, zIndex: 9999,
+        alignItems: 'center',
+        opacity: toastAnim,
+        transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+      }}>
+        <View style={{
+          backgroundColor: '#00E676', borderRadius: 30, paddingHorizontal: 22, paddingVertical: 13,
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          shadowColor: '#00E676', shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
+        }}>
+          <Ionicons name="checkmark-circle" size={18} color="#000" />
+          <Text style={{ color: '#000', fontWeight: '800', fontSize: 14 }}>{toastMsg}</Text>
+        </View>
+      </Animated.View>
+    );
+  }
+
+  async function savePushToken() {
+    if (!currentUser) return;
+    try {
+      if (!Device.isDevice) return;
+      const { granted } = await Notifications.getPermissionsAsync();
+      if (!granted) return;
+      const tokenData = await Notifications.getExpoPushTokenAsync();
+      const token = tokenData.data;
+      if (token) {
+        await supabase.from('profiles').update({ expo_push_token: token }).eq('id', currentUser.id);
+      }
+    } catch {} // best-effort : échoue silencieusement sans EAS configuré
+  }
+
+  async function loadPendingInvites() {
+    if (!currentUser) return;
+    try {
+      const { data } = await supabase
+        .from('notifications')
+        .select('*, match:matches(id,title,scheduled_at,current_players,max_players,venue:venues(name,city)), from_user:profiles!from_user_id(pseudo)')
+        .eq('user_id', currentUser.id)
+        .eq('type', 'match_invite')
+        .eq('read', false)
+        .order('created_at', { ascending: false });
+      if (data) setPendingInvites(data);
+    } catch {}
+  }
+
+  async function acceptInvite(invite: any) {
+    try {
+      await supabase.from('notifications').update({ read: true }).eq('id', invite.id);
+      setPendingInvites(prev => prev.filter((n: any) => n.id !== invite.id));
+      if (invite.match) loadMatchDetail(invite.match);
+    } catch {}
+  }
+
+  async function declineInvite(inviteId: string) {
+    try {
+      await supabase.from('notifications').update({ read: true }).eq('id', inviteId);
+      setPendingInvites(prev => prev.filter((n: any) => n.id !== inviteId));
+    } catch {}
+  }
+
   async function ensureLocationPermission(promptIfNeeded = false): Promise<boolean> {
     try {
       const current = await Location.getForegroundPermissionsAsync();
@@ -430,8 +551,17 @@ export default function App() {
         return false;
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      const { latitude, longitude } = loc.coords;
+      setUserLocation({ latitude, longitude });
       setLocationDenied(false);
+      // Reverse geocoding pour afficher la ville (best-effort)
+      try {
+        const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (geo && geo.length > 0) {
+          const city = geo[0].city ?? geo[0].subregion ?? geo[0].region ?? 'Perpignan';
+          setUserCityName(city);
+        }
+      } catch { /* on garde Perpignan si le geocoding échoue */ }
       return true;
     } catch {
       return false;
@@ -472,23 +602,32 @@ export default function App() {
     if (!currentUser || avatarLoaded) return;
     let { data } = await supabase
       .from('profiles')
-      .select('avatar_id, avatar_photo_url, skill, goals, assists')
+      .select('avatar_id, avatar_photo_url, skill, goals, assists, disponibilites')
       .eq('id', currentUser.id)
       .single();
     if (!data) {
-      const fallback = await supabase.from('profiles').select('avatar_id, avatar_photo_url, skill').eq('id', currentUser.id).single();
+      const fallback = await supabase.from('profiles').select('avatar_id, avatar_photo_url, skill, disponibilites').eq('id', currentUser.id).single();
       data = fallback.data as any;
     }
     if (data) {
       if (data.avatar_photo_url) setUserPhoto(data.avatar_photo_url);
       else if (data.avatar_id) setUserAvatar(data.avatar_id);
       if (data.skill) setUserSkill(data.skill);
+      if (Array.isArray(data.disponibilites)) setUserDisponibilites(data.disponibilites);
       setPersonalStatsDraft({
         goals: String(data.goals ?? 0),
         assists: String(data.assists ?? 0),
       });
     }
     setAvatarLoaded(true);
+  }
+
+  async function updateDisponibilites(newDispos: {jour:string;debut:string;fin:string}[]) {
+    if (!currentUser) return;
+    try {
+      await supabase.from('profiles').update({ disponibilites: newDispos }).eq('id', currentUser.id);
+      setUserDisponibilites(newDispos);
+    } catch (e: any) { Alert.alert('Erreur', e.message); }
   }
 
   async function savePersonalStats() {
@@ -506,19 +645,63 @@ export default function App() {
   }
 
   const searchRef = useRef<TextInput>(null);
-  const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', venueName:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true });
+  const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', venueName:'', venueAddress:'', venuePostal:'', venueCity:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true });
+  const [citySuggestions, setCitySuggestions] = useState<{nom:string,codesPostaux:string[]}[]>([]);
+  const [venueSearchOpen, setVenueSearchOpen] = useState(false);
+  const [venueSearchText, setVenueSearchText] = useState('');
+  const cityDebounceRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<{label:string,street:string,postcode:string,city:string}[]>([]);
+  const [addressSearchOpen, setAddressSearchOpen] = useState(false);
+  const [addressSearchText, setAddressSearchText] = useState('');
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const [showDateModal, setShowDateModal] = useState(false);
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [calMonth, setCalMonth] = useState(new Date());
 
   // ── Effects (déclarés AVANT tout early return — règle des hooks React) ──────
 
+  useEffect(() => { if (screen === 'create') Keyboard.dismiss(); }, [screen]);
+
   useEffect(() => {
-    if (screen === 'home' || screen === 'profile' || screen === 'map') { loadMatches(); loadVenues(); loadLiveStats(); if (!guestMode) { loadMyMatches(); loadAvatar(); } }
-    if (screen === 'create') { loadVenues(); loadProposals(); }
-    if (screen === 'venues') { loadVenues(); loadProposals(); }
+    if (screen === 'home') {
+      homeLogoFade.setValue(0);
+      Animated.timing(homeLogoFade, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    }
+  }, [screen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const c = loadCacheRef.current;
+    const now = Date.now();
+    const TTL_FAST = 60_000;    // 1 min — matchs, stats, mes matchs
+    const TTL_SLOW = 300_000;   // 5 min — terrains, avatar
+    const fresh = (key: string, ttl: number) => !!c[key] && now - c[key] < ttl;
+    const mark  = (key: string) => { c[key] = now; };
+
+    if (screen === 'home' || screen === 'profile' || screen === 'map') {
+      if (!fresh('matches',   TTL_FAST)) { loadMatches();   mark('matches');   }
+      if (!fresh('venues',    TTL_SLOW)) { loadVenues();    mark('venues');    }
+      if (!fresh('stats',     TTL_FAST)) { loadLiveStats(); mark('stats');     }
+      if (!guestMode) {
+        if (!fresh('myMatches', TTL_FAST)) { loadMyMatches(); mark('myMatches'); }
+        if (!fresh('avatar',    TTL_SLOW)) { loadAvatar();    mark('avatar');    }
+      }
+    }
+    if (screen === 'home') {
+      prefetchPlayers();
+      ensureLocationPermission(true);
+    }
+    if (screen === 'profile' && !guestMode) loadPendingInvites();
+    if (screen === 'create') { if (!fresh('venues', TTL_SLOW)) { loadVenues(); mark('venues'); } loadProposals(); }
+    if (screen === 'venues') { if (!fresh('venues', TTL_SLOW)) { loadVenues(); mark('venues'); } loadProposals(); }
     if (screen === 'create' && form.title === '') setForm(f => ({...f, title: `${MATCH_TYPES[f.type].label} du ${new Date().toLocaleDateString('fr-FR', {weekday:'long'})}`}));
   }, [screen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sauvegarde du push token + chargement des invitations dès que l'utilisateur est connu
+  useEffect(() => {
+    if (!currentUser) { setPendingInvites([]); return; }
+    savePushToken();
+    loadPendingInvites();
+  }, [currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Détection de level up
   useEffect(() => {
@@ -550,7 +733,7 @@ export default function App() {
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'community_messages' }, ()=>loadCommunityMessages())
       .subscribe();
     return () => { sub.unsubscribe(); };
-  }, [blockedUserIds, screen, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [screen, currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (screen !== 'chat' || !selectedMatch) return;
@@ -583,6 +766,7 @@ export default function App() {
     );
   }
   const toRateCount = matches.filter((m:any) => myMatches.includes(m.id) && new Date(m.scheduled_at) < new Date() && !myRatings[m.id]).length; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const profileBadgeCount = toRateCount + pendingInvites.length;
 
   async function loadMessages() {
     if (!selectedMatch) return;
@@ -627,42 +811,42 @@ export default function App() {
 
   async function loadMyMatches() {
     if (!currentUser) return;
-    const { data } = await supabase.from('match_players').select('match_id').eq('user_id', currentUser.id).eq('status','confirmed');
-    if (data) setMyMatches(data.map((d:any) => d.match_id));
-    // Planifier rappels pour matchs futurs déjà rejoints
-    if (data && data.length > 0) {
-      const { data: upcomingJoined } = await supabase
-        .from('matches')
-        .select('id, title, scheduled_at')
-        .in('id', data.map((d: any) => d.match_id))
-        .gt('scheduled_at', new Date().toISOString());
-      if (upcomingJoined) {
-        for (const m of upcomingJoined) {
-          scheduleMatchReminder(m.title, new Date(m.scheduled_at), m.id, false);
-        }
-      }
-    }
-    const { data: created } = await supabase.from('matches').select('*, venue:venues(name)').eq('organizer_id', currentUser.id).order('scheduled_at', { ascending: false });
-    if (created) setMyCreatedMatches(created);
-    const { data: ratings } = await supabase.from('match_ratings').select('match_id, rating').eq('user_id', currentUser.id);
-    if (ratings) {
-      const r: Record<string,number> = {};
-      ratings.forEach((x:any) => { r[x.match_id] = x.rating; });
+
+    // 3 requêtes en parallèle au lieu de séquentielles
+    const [playersRes, createdRes, ratingsRes] = await Promise.all([
+      supabase.from('match_players').select('match_id').eq('user_id', currentUser.id).eq('status','confirmed'),
+      supabase.from('matches').select('id, title, scheduled_at, status, type, organizer_id, max_players, current_players, is_private, price_per_player, venue_id, venue_name, venue_city, venue:venues(id, name, city, address)').eq('organizer_id', currentUser.id).order('scheduled_at', { ascending: false }).limit(50),
+      supabase.from('match_ratings').select('match_id, rating').eq('user_id', currentUser.id).limit(500),
+    ]);
+
+    const matchIds = (playersRes.data ?? []).map((d: any) => d.match_id);
+    if (playersRes.data) setMyMatches(matchIds);
+    if (createdRes.data) setMyCreatedMatches(createdRes.data);
+    if (ratingsRes.data) {
+      const r: Record<string, number> = {};
+      ratingsRes.data.forEach((x: any) => { r[x.match_id] = x.rating; });
       setMyRatings(r);
+    }
+
+    // Planifier rappels (secondaire, non-bloquant pour l'UI)
+    if (matchIds.length > 0) {
+      const { data: upcoming } = await supabase.from('matches').select('id, title, scheduled_at').in('id', matchIds).gt('scheduled_at', new Date().toISOString());
+      if (upcoming) upcoming.forEach((m: any) => scheduleMatchReminder(m.title, new Date(m.scheduled_at), m.id, false));
     }
   }
 
   async function loadLiveStats() {
     try {
       const now = new Date().toISOString();
-      const [profilesRes, matchesRes] = await Promise.all([
-        supabase.from('profiles').select('id').limit(2500),
-        supabase.from('matches').select('id, organizer_id, status, scheduled_at').eq('status','open').gte('scheduled_at', now).limit(500),
+      const [profilesRes, matchesRes, completedRes] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('matches').select('*', { count: 'exact', head: true }).eq('status','open').gte('scheduled_at', now),
+        supabase.from('matches').select('*', { count: 'exact', head: true }).eq('status','played'),
       ]);
-      const launchMatches = (matchesRes.data ?? []).filter((match: any) => isLaunchCommunityMatch(match));
       setLiveStats({
-        players: (profilesRes.data ?? []).length,
-        matchesTonight: launchMatches.length,
+        players:          profilesRes.count ?? 0,
+        matchesTonight:   matchesRes.count   ?? 0,
+        matchesCompleted: completedRes.count  ?? 0,
       });
     } catch {}
   }
@@ -670,14 +854,14 @@ export default function App() {
   function startPulse() {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.35, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.07, duration: 650, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.96, duration: 650, useNativeDriver: true }),
       ])
     ).start();
   }
 
   async function loadVenues() {
-    const { data } = await supabase.from('venues').select('*').order('name');
+    const { data } = await supabase.from('venues').select('id, name, city, address, latitude, longitude, types').order('name').limit(500);
     if (data) setVenues(data);
     // Enrichir avec OpenStreetMap si localisation disponible
     if (userLocation) enrichVenuesFromOSM(userLocation.latitude, userLocation.longitude, data ?? []);
@@ -716,21 +900,43 @@ export default function App() {
   async function loadMatches(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
     try {
-      const { data } = await supabase.from('matches').select('*, venue:venues(*)').neq('status','cancelled').order('scheduled_at', { ascending: true });
+      // Marquer automatiquement comme joués les matchs terminés depuis +3h
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      await supabase.from('matches').update({ status: 'played' })
+        .lt('scheduled_at', threeHoursAgo)
+        .not('status', 'in', '(cancelled,played)');
+
+      const { data } = await supabase.from('matches')
+        .select('id, title, scheduled_at, status, type, organizer_id, max_players, current_players, is_private, price_per_player, description, venue_id, venue_name, venue_address, venue_postal, venue_city, venue:venues(id, name, city, address, latitude, longitude, types)')
+        .neq('status','cancelled')
+        .order('scheduled_at', { ascending: true })
+        .limit(200);
       const hydratedMatches = await hydrateMatchesWithActualPlayers(data ?? []);
-      const launchMatches = hydratedMatches.filter((match: any) => isLaunchCommunityMatch(match));
-      setMatches(launchMatches);
-      setLiveStats((prev) => ({ ...prev, matchesTonight: launchMatches.filter((match: any) => match.status === 'open' && new Date(match.scheduled_at) >= new Date()).length }));
+      setMatches(hydratedMatches);
+      const now2 = new Date();
+      setLiveStats((prev) => ({
+        ...prev,
+        matchesTonight: hydratedMatches.filter((match: any) => match.status === 'open' && new Date(match.scheduled_at) >= now2).length,
+        matchesCompleted: (data ?? []).filter((match: any) => match.status === 'played').length,
+      }));
       setMatchesLoaded(true);
     } finally { setRefreshing(false); }
   }
 
   async function loadMatchDetail(match: any) {
-    const [hydratedMatch] = await hydrateMatchesWithActualPlayers([match]);
-    setSelectedMatch(hydratedMatch ?? match); setScreen('detail');
-    const { data } = await supabase.from('match_players').select('*, user:profiles(id,pseudo,level,reputation_score,reputation_rank)').eq('match_id', match.id).eq('status','confirmed');
-    if (data) {
-      const enrichedPlayers = await enrichMatchPlayers(data);
+    // Réinitialiser immédiatement pour éviter le flash des anciennes données
+    setMatchPlayers([]);
+    setSelectedMatch(match);
+    setScreen('detail');
+    // Lancer les deux requêtes en parallèle pour réduire la latence d'affichage
+    const [hydratedResults, playersRes] = await Promise.all([
+      hydrateMatchesWithActualPlayers([match]),
+      supabase.from('match_players').select('*, user:profiles(id,pseudo,level,reputation_score,reputation_rank)').eq('match_id', match.id).eq('status','confirmed'),
+    ]);
+    const [hydratedMatch] = hydratedResults;
+    if (hydratedMatch) setSelectedMatch(hydratedMatch);
+    if (playersRes.data) {
+      const enrichedPlayers = await enrichMatchPlayers(playersRes.data);
       setMatchPlayers(enrichedPlayers);
       setSelectedMatch((prev: any) => prev ? { ...prev, current_players: enrichedPlayers.length } : prev);
     }
@@ -853,9 +1059,22 @@ export default function App() {
       if (error) throw error;
       const { data: sessionData } = await supabase.auth.getSession();
       if (__DEV__) console.log('[AUTH] session après login:', sessionData?.session?.user?.id ?? 'NULL');
-      const { data: p } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+      const { data: p } = await supabase.from('profiles').select('pseudo, level, reputation_score, reputation_rank, skill, disponibilites, avatar_id, avatar_photo_url').eq('id', data.user.id).single();
       setCurrentUser({ id:data.user.id, email:data.user.email!, pseudo:p?.pseudo??email.split('@')[0], level:p?.level??'D4', matchesPlayed:0, matchesCreated:0, reputation_score:p?.reputation_score??0, reputation_rank:p?.reputation_rank??'D4' });
       setUserSkill(p?.skill ?? null);
+      setUserDisponibilites(Array.isArray(p?.disponibilites) ? p.disponibilites : []);
+      // Appliquer les disponibilités en attente enregistrées lors de l'inscription
+      try {
+        const pendingKey = `@footmatch_pending_dispo_${data.user.email}`;
+        const raw = await AsyncStorage.getItem(pendingKey);
+        if (raw) {
+          const dispos = JSON.parse(raw);
+          if (Array.isArray(dispos) && dispos.length > 0) {
+            await supabase.from('profiles').update({ disponibilites: dispos }).eq('id', data.user.id);
+            await AsyncStorage.removeItem(pendingKey);
+          }
+        }
+      } catch { /* best-effort : ne bloque pas le login */ }
       setScreen('home');
     } catch (e:any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
@@ -871,9 +1090,19 @@ export default function App() {
     try {
       const { error } = await supabase.auth.signUp({ email, password, options:{ data:{ pseudo, city: registerCity.trim(), postal_code: registerPostalCode.trim() } } });
       if (error) throw error;
+      // Stocker les disponibilités en AsyncStorage pour les appliquer après le premier login
+      if (registerDisponibilites.length > 0) {
+        try {
+          await AsyncStorage.setItem(
+            `@footmatch_pending_dispo_${email}`,
+            JSON.stringify(registerDisponibilites),
+          );
+        } catch { /* best-effort */ }
+      }
       Alert.alert('Compte créé !','Tu peux maintenant te connecter.');
       setRegisterCity('');
       setRegisterPostalCode('');
+      setRegisterDisponibilites([]);
       setScreen('login');
     } catch (e:any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
@@ -1042,9 +1271,64 @@ export default function App() {
     );
   }
 
+  async function fetchCityByPostal(postal: string) {
+    if (postal.length !== 5) return;
+    try {
+      const res = await fetch(`https://geo.api.gouv.fr/communes?codePostal=${postal}&fields=nom&limit=1&boost=population`);
+      const data = await res.json();
+      if (data.length > 0) setForm(f => ({ ...f, venueCity: data[0].nom }));
+    } catch {}
+  }
+
+  function onAddressSearchChange(text: string) {
+    setAddressSearchText(text);
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    if (text.length < 3) { setAddressSuggestions([]); return; }
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(text)}&limit=200`);
+        const json = await res.json();
+        const results = (json.features ?? []).map((f: any) => ({
+          label: f.properties.label,
+          street: f.properties.name,
+          postcode: f.properties.postcode,
+          city: f.properties.city,
+        }));
+        setAddressSuggestions(results);
+      } catch {}
+    }, 300);
+  }
+
+  function onVenueSearchChange(text: string) {
+    setVenueSearchText(text);
+    if (cityDebounceRef.current) clearTimeout(cityDebounceRef.current);
+    if (text.length < 2) { setCitySuggestions([]); return; }
+    cityDebounceRef.current = setTimeout(async () => {
+      try {
+        if (/^\d+$/.test(text)) {
+          const dept = text.slice(0, 2);
+          const res = await fetch(`https://geo.api.gouv.fr/communes?codeDepartement=${dept}&fields=nom,codesPostaux&limit=500&boost=population`);
+          const data: {nom:string,codesPostaux:string[]}[] = await res.json();
+          const filtered = data.filter(c => c.codesPostaux.some(cp => cp.startsWith(text))).slice(0, 6);
+          setCitySuggestions(filtered);
+        } else {
+          const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(text)}&type=municipality&limit=6`);
+          const json = await res.json();
+          const results = (json.features ?? []).map((f: any) => ({
+            nom: f.properties.city,
+            codesPostaux: [f.properties.postcode],
+          }));
+          setCitySuggestions(results);
+        }
+      } catch {}
+    }, 300);
+  }
+
   async function handleCreateMatch() {
     if (!form.title.trim()) { Alert.alert('Erreur','Donne un nom au match'); return; }
     if (!form.venueName.trim()) { Alert.alert('Erreur','Indique le nom du terrain'); return; }
+    if (!form.venueAddress.trim()) { Alert.alert('Erreur','Indique l\'adresse du terrain'); return; }
+    if (!form.venuePostal.trim() && !form.venueCity.trim()) { Alert.alert('Erreur','Indique le code postal ou la ville du terrain'); return; }
     if (!form.date||!form.time) { Alert.alert('Erreur','Choisis une date et heure'); return; }
     if (parseInt(form.maxPlayers) < 2) { Alert.alert('Erreur','Il faut au moins 2 joueurs'); return; }
     if (!ensureCleanContent(form.title, 'ce titre')) return;
@@ -1055,7 +1339,8 @@ export default function App() {
     setLoading(true);
     try {
       const { data, error } = await supabase.from('matches').insert({
-        title:form.title.trim(), type:form.type, venue_id:null,
+        title:form.title.trim(), type:form.type, venue_id:null, venue_name:form.venueName.trim(),
+        venue_address:form.venueAddress.trim(), venue_postal:form.venuePostal.trim(), venue_city:form.venueCity.trim(),
         organizer_id:currentUser!.id, scheduled_at:parsed.toISOString(),
         max_players:parseInt(form.maxPlayers), current_players:1,
         price_per_player:form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0), level:'Tous niveaux',
@@ -1066,9 +1351,70 @@ export default function App() {
       scheduleMatchReminder(data.title, new Date(data.scheduled_at), data.id, true);
       setMyMatches(prev => [...prev, data.id]);
       Alert.alert('🎉 Match créé !','Ton match est en ligne !');
-      setForm({ title:'', type:'five', venueId:'', venueName:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true });
+      setForm({ title:'', type:'five', venueId:'', venueName:'', venueAddress:'', venuePostal:'', venueCity:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true }); setCitySuggestions([]); setVenueSearchOpen(false); setVenueSearchText(''); setAddressSuggestions([]); setAddressSearchOpen(false); setAddressSearchText('');
       setScreen('home'); loadMatches();
     } catch (e:any) { Alert.alert('Erreur', e.message); }
+    finally { setLoading(false); }
+  }
+
+  async function handleDeleteMatch() {
+    if (!currentUser || !selectedMatch) return;
+    Alert.alert(
+      'Supprimer le match',
+      'Es-tu sûr de vouloir supprimer ce match ? Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer', style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await supabase.from('match_players').delete().eq('match_id', selectedMatch.id);
+              const { error } = await supabase.from('matches').delete().eq('id', selectedMatch.id);
+              if (error) throw error;
+              setMyMatches(prev => prev.filter(id => id !== selectedMatch.id));
+              setSelectedMatch(null);
+              setScreen('home');
+              loadMatches();
+            } catch (e: any) { Alert.alert('Erreur', e.message); }
+            finally { setLoading(false); }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleUpdateMatch() {
+    if (!currentUser || !editingMatch) return;
+    if (!form.title.trim()) { Alert.alert('Erreur', 'Donne un nom au match'); return; }
+    if (!form.venueName.trim()) { Alert.alert('Erreur', 'Indique le nom du terrain'); return; }
+    if (!form.venueAddress.trim()) { Alert.alert('Erreur', 'Indique l\'adresse du terrain'); return; }
+    if (!form.venuePostal.trim() && !form.venueCity.trim()) { Alert.alert('Erreur', 'Indique le code postal ou la ville du terrain'); return; }
+    if (!form.date || !form.time) { Alert.alert('Erreur', 'Choisis une date et heure'); return; }
+    if (parseInt(form.maxPlayers) < 2) { Alert.alert('Erreur', 'Il faut au moins 2 joueurs'); return; }
+    if (!ensureCleanContent(form.title, 'ce titre')) return;
+    if (form.description.trim() && !ensureCleanContent(form.description, 'cette description')) return;
+    const parsed = parseFrenchDateToDate(form.date, form.time);
+    if (!parsed || isNaN(parsed.getTime())) { Alert.alert('Erreur', 'Format de date invalide (JJ/MM/AAAA HH:MM)'); return; }
+    if (parsed <= new Date()) { Alert.alert('Erreur', 'La date doit être dans le futur'); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('matches').update({
+        title: form.title.trim(), type: form.type, venue_name: form.venueName.trim(),
+        venue_address: form.venueAddress.trim(), venue_postal: form.venuePostal.trim(), venue_city: form.venueCity.trim(),
+        scheduled_at: parsed.toISOString(), max_players: parseInt(form.maxPlayers),
+        price_per_player: form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0),
+        description: form.description,
+      }).eq('id', editingMatch.id);
+      if (error) throw error;
+      const updated = { ...editingMatch, title: form.title.trim(), type: form.type, venue_name: form.venueName.trim(), scheduled_at: parsed.toISOString(), max_players: parseInt(form.maxPlayers), price_per_player: form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0), description: form.description };
+      setSelectedMatch(updated);
+      setEditingMatch(null);
+      setForm({ title: '', type: 'five', venueId: '', venueName: '', venueAddress: '', venuePostal: '', venueCity: '', date: '', time: '', maxPlayers: '10', price: '', description: '', isPrivate: false, isFree: true });
+      Alert.alert('✅ Match modifié !', 'Les modifications ont été enregistrées.');
+      setScreen('detail');
+      loadMatches();
+    } catch (e: any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
   }
 
@@ -1124,7 +1470,7 @@ export default function App() {
       const date = new Date(selectedMatch.scheduled_at).toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
       const link = shareUrlForMatch(selectedMatch.id);
       await Share.share({
-        message: `⚽ ${selectedMatch.title}\n📍 ${selectedMatch.venue?.name ?? 'Terrain'}, ${selectedMatch.venue?.city ?? ''}\n📅 ${date}\n👥 ${selectedMatch.current_players}/${selectedMatch.max_players} joueurs · ${spotsText}\n\n👉 ${link}\n🆓 Rejoins-nous gratuitement sur FootMatch !`,
+        message: `⚽ ${selectedMatch.title}\n📍 ${selectedMatch.venue?.name ?? selectedMatch.venue_name ?? 'Terrain'}${selectedMatch.venue?.city ? `, ${selectedMatch.venue.city}` : ''}\n📅 ${date}\n👥 ${selectedMatch.current_players}/${selectedMatch.max_players} joueurs · ${spotsText}\n\n👉 ${link}\n🆓 Rejoins-nous gratuitement sur FootMatch !`,
         title: selectedMatch.title,
         url: link,
       });
@@ -1166,15 +1512,56 @@ export default function App() {
 
   async function handleInviteToMatch(match: any) {
     setShowInviteModal(false);
+    const targetPlayerId = invitedPlayerId;
     setInvitedPlayerId(null);
+    if (!currentUser || !targetPlayerId) return;
+
     try {
-      const date = new Date(match.scheduled_at).toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'});
-      const link = shareUrlForMatch(match.id);
-      await Share.share({
-        message: `⚽ Tu veux jouer avec moi ?\n${match.title}\n📍 ${match.venue?.name ?? 'Terrain'}, ${match.venue?.city ?? ''}\n📅 ${date}\n👥 ${match.current_players}/${match.max_players} joueurs\n\n👉 ${link}\n🆓 Rejoins-nous sur FootMatch !`,
-        title: match.title,
-        url: link,
-      });
+      // 1. Récupère le profil du joueur invité (pseudo + push token)
+      const { data: targetProfile } = await supabase
+        .from('profiles')
+        .select('expo_push_token, pseudo')
+        .eq('id', targetPlayerId)
+        .single();
+
+      const venueName = match.venue?.name ?? match.venue_name ?? 'Terrain';
+      const venueCity = match.venue?.city ? `, ${match.venue.city}` : '';
+      const dateStr = new Date(match.scheduled_at).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      const notifTitle = `${currentUser.pseudo} t'invite à jouer ⚽`;
+      const notifBody = `${match.title} · ${venueName}${venueCity} · ${dateStr}`;
+
+      // 2. Crée la notification in-app (le joueur la verra dans son profil)
+      try {
+        await supabase.from('notifications').insert({
+          user_id: targetPlayerId,
+          type: 'match_invite',
+          title: notifTitle,
+          body: notifBody,
+          match_id: match.id,
+          from_user_id: currentUser.id,
+        });
+      } catch {} // si la table n'existe pas encore, on ignore
+
+      // 3. Envoie la notification push Expo sur le téléphone du joueur
+      if (targetProfile?.expo_push_token) {
+        try {
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+              to: targetProfile.expo_push_token,
+              title: notifTitle,
+              body: notifBody,
+              data: { type: 'match_invite', matchId: match.id },
+              sound: 'default',
+              badge: 1,
+            }),
+          });
+        } catch {} // push best-effort
+      }
+
+      // 4. Toast de confirmation pour l'invitant
+      showToast(`Invitation envoyée à ${targetProfile?.pseudo ?? 'ce joueur'} !`);
     } catch {}
   }
 
@@ -1238,10 +1625,22 @@ export default function App() {
     finally { setRatingLoading(false); }
   }
 
+  function requestRating(matchId: string, rating: number) {
+    const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+    Alert.alert(
+      'Confirmer cette note ?',
+      `${stars}  ${rating}/5\n\nCette note sera enregistrée pour ce match.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Valider', onPress: () => handleRate(matchId, rating) },
+      ]
+    );
+  }
+
   const filteredMatches = matches.filter((m:any) => {
     const now = new Date();
     const q = searchQuery.toLowerCase();
-    if (q && !m.title?.toLowerCase().includes(q) && !m.venue?.name?.toLowerCase().includes(q) && !m.venue?.city?.toLowerCase().includes(q) && !m.venue?.address?.toLowerCase().includes(q)) return false;
+    if (q && !m.title?.toLowerCase().includes(q) && !m.venue?.name?.toLowerCase().includes(q) && !m.venue?.city?.toLowerCase().includes(q) && !m.venue?.address?.toLowerCase().includes(q) && !m.venue_city?.toLowerCase().includes(q) && !m.venue_postal?.includes(q)) return false;
     if (activeFilter==='all') return new Date(m.scheduled_at)>now;
     if (activeFilter==='spots') return m.current_players<m.max_players&&new Date(m.scheduled_at)>now;
     if (activeFilter==='mine') return myMatches.includes(m.id);
@@ -1255,7 +1654,26 @@ export default function App() {
       const spotsB = b.max_players - b.current_players;
       return spotsA - spotsB;
     }
-    return 0;
+    // Filtre "Mes matchs" : matchs à venir en premier (du plus proche), puis passés (du plus récent)
+    if (activeFilter==='mine') {
+      const now = new Date().getTime();
+      const aDate = new Date(a.scheduled_at).getTime();
+      const bDate = new Date(b.scheduled_at).getTime();
+      const aUpcoming = aDate > now;
+      const bUpcoming = bDate > now;
+      if (aUpcoming && !bUpcoming) return -1;
+      if (!aUpcoming && bUpcoming) return 1;
+      if (aUpcoming && bUpcoming) return aDate - bDate;
+      return bDate - aDate;
+    }
+    // Tri par proximité si la géolocalisation est active
+    if (userLocation && a.venue?.latitude && b.venue?.latitude) {
+      const distA = calcDistance(userLocation.latitude, userLocation.longitude, a.venue.latitude, a.venue.longitude);
+      const distB = calcDistance(userLocation.latitude, userLocation.longitude, b.venue.latitude, b.venue.longitude);
+      return distA - distB;
+    }
+    // Fallback : ordre chronologique
+    return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
   });
 
   // ── SPLASH SCREEN ─────────────────────────────────────────────────────────────
@@ -1338,7 +1756,7 @@ export default function App() {
           <Text style={s.subHeaderTitle}>Proposer un terrain</Text>
         </View>
         <View style={s.infoBox}>
-          <Text style={s.infoBoxText}>📋 La communauté votera pour valider ce terrain. À 70% de votes positifs (min. 3 votes), il sera officiellement ajouté !</Text>
+          <View style={{flexDirection:'row',alignItems:'flex-start',gap:6}}><Ionicons name="information-circle" size={16} color={Colors.textMuted} style={{marginTop:1}} /><Text style={[s.infoBoxText,{flex:1}]}>La communauté votera pour valider ce terrain. À 70% de votes positifs (min. 3 votes), il sera officiellement ajouté !</Text></View>
         </View>
         <Text style={s.fieldLabel}>Photo du terrain</Text>
         {venuePhoto ? (
@@ -1366,13 +1784,13 @@ export default function App() {
         </View>
         <Text style={s.fieldLabel}>Type(s) de terrain</Text>
         <View style={s.typeRow}>
-          {[{key:'five',label:'Five',emoji:'⚡',color:Colors.green},{key:'city',label:'City',emoji:'🏙️',color:Colors.greenLight},{key:'eleven',label:'Foot 11',emoji:'⚽',color:Colors.white}].map((t) => {
+          {[{key:'five',label:'Five',iconName:'flash',color:Colors.green},{key:'city',label:'City',iconName:'business',color:Colors.greenLight},{key:'eleven',label:'Foot 11',iconName:'football',color:Colors.white}].map((t) => {
             const selected = venueForm.types.includes(t.key);
             return (
               <TouchableOpacity key={t.key} style={[s.typeBtn,selected&&{borderColor:t.color,backgroundColor:`${t.color}22`}]}
                 onPress={()=>setVenueForm(f=>({...f,types:selected?f.types.filter(x=>x!==t.key):[...f.types,t.key]}))}
                 accessibilityRole="checkbox" accessibilityLabel={t.label} accessibilityState={{ checked: selected }}>
-                <Text style={s.typeBtnEmoji}>{t.emoji}</Text>
+                <Ionicons name={t.iconName as any} size={22} color={selected?t.color:Colors.textMuted} />
                 <Text style={[s.typeBtnLabel,selected&&{color:t.color}]}>{t.label}</Text>
               </TouchableOpacity>
             );
@@ -1382,7 +1800,8 @@ export default function App() {
         <TextInput style={[s.input,{height:80,textAlignVertical:'top'}]} value={venueForm.description} onChangeText={v=>setVenueForm(f=>({...f,description:v}))} placeholder="Vestiaires, parking, éclairage..." placeholderTextColor={Colors.textMuted} multiline />
         <TouchableOpacity style={[s.btn,loading&&s.btnDisabled]} onPress={handleProposeVenue} disabled={loading}
           accessibilityRole="button" accessibilityLabel="Soumettre le terrain à la communauté">
-          <Text style={s.btnText}>{loading?(uploadingPhoto?'Upload photo...':'Envoi...'):'🏟️ Soumettre à la communauté'}</Text>
+          {!loading&&<Ionicons name="business" size={16} color="#000" />}
+          <Text style={s.btnText}>{loading?(uploadingPhoto?'Upload photo...':'Envoi...'):'Soumettre à la communauté'}</Text>
         </TouchableOpacity>
         <View style={{height:60}} />
       </ScrollView>
@@ -1398,7 +1817,7 @@ export default function App() {
       <View style={s.container}>
         <StatusBar barStyle="light-content" />
         <View style={s.pageHeader}>
-          <Text style={s.pageHeaderTitle}>🏟️ Terrains</Text>
+          <View style={{flexDirection:'row',alignItems:'center',gap:6}}><Ionicons name="business" size={18} color={Colors.text} /><Text style={s.pageHeaderTitle}>Terrains</Text></View>
           <TouchableOpacity style={s.proposeBtn} onPress={()=>setScreen('propose_venue')} accessibilityRole="button" accessibilityLabel="Proposer un terrain">
             <Text style={s.proposeBtnText}>+ Proposer</Text>
           </TouchableOpacity>
@@ -1408,26 +1827,26 @@ export default function App() {
 
           {/* ── Complexes officiels ── */}
           {venues.length>0&&<>
-            <Text style={s.sectionTitle}>🏟️ Complexes de Five ({venues.length})</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}><Ionicons name="business" size={15} color={Colors.green} /><Text style={s.sectionTitle}>Complexes de Five ({venues.length})</Text></View>
             {venues.map((v:any)=>(
               <View key={v.id} style={[s.venueCard,{borderColor:Colors.greenBorder}]}>
                 <View style={s.venueCardHeader}>
                   <Text style={s.venueCardName}>{v.name}</Text>
-                  <View style={s.validatedBadge}><Text style={s.validatedBadgeText}>✅ Officiel</Text></View>
+                  <View style={[s.validatedBadge,{flexDirection:'row',alignItems:'center',gap:3}]}><Ionicons name="checkmark-circle" size={12} color="#000" /><Text style={s.validatedBadgeText}>Officiel</Text></View>
                 </View>
-                <Text style={s.venueCardAddress}>📍 {v.address}, {v.city}</Text>
-                {v.types&&<View style={s.venueCardTypes}>{v.types.map((t:string)=>{ const cfg=MATCH_TYPES[t as keyof typeof MATCH_TYPES]; return cfg?<View key={t} style={[s.badge,{backgroundColor:cfg.dimColor,borderColor:cfg.borderColor}]}><Text style={[s.badgeText,{color:cfg.color}]}>{cfg.emoji} {cfg.label}</Text></View>:null; })}</View>}
+                <View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:4}}><Ionicons name="location" size={12} color={Colors.textMuted} /><Text style={s.venueCardAddress}>{v.address}, {v.city}</Text></View>
+                {v.types&&<View style={s.venueCardTypes}>{v.types.map((t:string)=>{ const cfg=MATCH_TYPES[t as keyof typeof MATCH_TYPES]; return cfg?<View key={t} style={[s.badge,{backgroundColor:cfg.dimColor,borderColor:cfg.borderColor}]}><Ionicons name={cfg.iconName as any} size={10} color={cfg.color} /><Text style={[s.badgeText,{color:cfg.color}]}>{cfg.label}</Text></View>:null; })}</View>}
               </View>
             ))}
           </>}
 
           {/* ── Propositions communautaires ── */}
-          {validated.length>0&&<>{<Text style={s.sectionTitle}>✅ Validés ({validated.length})</Text>}{validated.map((p:any)=>(
+          {validated.length>0&&<>{<View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}><Ionicons name="checkmark-circle" size={15} color={Colors.green} /><Text style={s.sectionTitle}>Validés ({validated.length})</Text></View>}{validated.map((p:any)=>(
             <View key={p.id} style={[s.venueCard,{borderColor:Colors.greenBorder}]}>
               {p.photo_url&&<Image source={{uri:p.photo_url}} style={s.venueCardPhoto} resizeMode="cover" />}
-              <View style={s.venueCardHeader}><Text style={s.venueCardName}>{p.name}</Text><View style={s.validatedBadge}><Text style={s.validatedBadgeText}>✅ Validé</Text></View></View>
-              <Text style={s.venueCardAddress}>📍 {p.address}, {p.city}</Text>
-              <View style={s.venueCardTypes}>{p.types.map((t:string)=>{ const cfg=MATCH_TYPES[t as keyof typeof MATCH_TYPES]; return <View key={t} style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.emoji} {cfg?.label}</Text></View>; })}</View>
+              <View style={s.venueCardHeader}><Text style={s.venueCardName}>{p.name}</Text><View style={[s.validatedBadge,{flexDirection:'row',alignItems:'center',gap:3}]}><Ionicons name="checkmark-circle" size={12} color="#000" /><Text style={s.validatedBadgeText}>Validé</Text></View></View>
+              <View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:4}}><Ionicons name="location" size={12} color={Colors.textMuted} /><Text style={s.venueCardAddress}>{p.address}, {p.city}</Text></View>
+              <View style={s.venueCardTypes}>{p.types.map((t:string)=>{ const cfg=MATCH_TYPES[t as keyof typeof MATCH_TYPES]; return <View key={t} style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.label}</Text></View>; })}</View>
             </View>
           ))}</>}
           {pending.length>0&&<>{<Text style={s.sectionTitle}>🗳️ En attente ({pending.length})</Text>}{pending.map((p:any)=>{
@@ -1437,23 +1856,23 @@ export default function App() {
               <View key={p.id} style={s.venueCard}>
                 {p.photo_url&&<Image source={{uri:p.photo_url}} style={s.venueCardPhoto} resizeMode="cover" />}
                 <View style={s.venueCardHeader}><Text style={s.venueCardName}>{p.name}</Text><View style={s.pendingBadge}><Text style={s.pendingBadgeText}>En attente</Text></View></View>
-                <Text style={s.venueCardAddress}>📍 {p.address}, {p.city}</Text>
+                <View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:4}}><Ionicons name="location" size={12} color={Colors.textMuted} /><Text style={s.venueCardAddress}>{p.address}, {p.city}</Text></View>
                 {p.description&&<Text style={s.venueCardDesc}>{p.description}</Text>}
-                <View style={s.venueCardTypes}>{p.types.map((t:string)=>{ const cfg=MATCH_TYPES[t as keyof typeof MATCH_TYPES]; return <View key={t} style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.emoji} {cfg?.label}</Text></View>; })}</View>
+                <View style={s.venueCardTypes}>{p.types.map((t:string)=>{ const cfg=MATCH_TYPES[t as keyof typeof MATCH_TYPES]; return <View key={t} style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.label}</Text></View>; })}</View>
                 <View style={s.voteProgressBg}><View style={[s.voteProgressFill,{width:`${pct}%` as any}]} /></View>
                 <Text style={s.voteProgressText}>{pct}% pour · {total} vote{total>1?'s':''} · min 3 requis</Text>
                 {!isOwner&&<View style={s.voteRow}>
-                  <TouchableOpacity style={[s.voteBtn,myVote===true&&s.voteBtnYesActive]} onPress={()=>handleVote(p.id,true)} accessibilityRole="button" accessibilityLabel={`Valider ce terrain${p.votes_yes>0?`, ${p.votes_yes} vote${p.votes_yes>1?'s':''} pour`:''}`}><Text style={[s.voteBtnText,myVote===true&&{color:'#000'}]}>👍 Valider{p.votes_yes>0?` (${p.votes_yes})`:''}</Text></TouchableOpacity>
-                  <TouchableOpacity style={[s.voteBtn,myVote===false&&s.voteBtnNoActive]} onPress={()=>handleVote(p.id,false)} accessibilityRole="button" accessibilityLabel={`Rejeter ce terrain${p.votes_no>0?`, ${p.votes_no} vote${p.votes_no>1?'s':''} contre`:''}`}><Text style={[s.voteBtnText,myVote===false&&{color:'#fff'}]}>👎 Rejeter{p.votes_no>0?` (${p.votes_no})`:''}</Text></TouchableOpacity>
+                  <TouchableOpacity style={[s.voteBtn,myVote===true&&s.voteBtnYesActive,{flexDirection:'row',alignItems:'center',gap:4}]} onPress={()=>handleVote(p.id,true)} accessibilityRole="button" accessibilityLabel={`Valider ce terrain${p.votes_yes>0?`, ${p.votes_yes} vote${p.votes_yes>1?'s':''} pour`:''}`}><Ionicons name="thumbs-up" size={14} color={myVote===true?'#000':Colors.textMuted} /><Text style={[s.voteBtnText,myVote===true&&{color:'#000'}]}>Valider{p.votes_yes>0?` (${p.votes_yes})`:''}</Text></TouchableOpacity>
+                  <TouchableOpacity style={[s.voteBtn,myVote===false&&s.voteBtnNoActive,{flexDirection:'row',alignItems:'center',gap:4}]} onPress={()=>handleVote(p.id,false)} accessibilityRole="button" accessibilityLabel={`Rejeter ce terrain${p.votes_no>0?`, ${p.votes_no} vote${p.votes_no>1?'s':''} contre`:''}`}><Ionicons name="thumbs-down" size={14} color={myVote===false?'#fff':Colors.textMuted} /><Text style={[s.voteBtnText,myVote===false&&{color:'#fff'}]}>Rejeter{p.votes_no>0?` (${p.votes_no})`:''}</Text></TouchableOpacity>
                 </View>}
                 {isOwner&&<Text style={s.ownerNote}>Tu as proposé ce terrain · En attente des votes</Text>}
               </View>
             );
           })}</>}
-          {proposals.length===0&&<View style={s.empty}><Text style={s.emptyEmoji}>🏟️</Text><Text style={s.emptyTitle}>Aucun terrain proposé</Text><Text style={s.emptyText}>Sois le premier à en proposer un !</Text></View>}
+          {proposals.length===0&&<View style={s.empty}><Ionicons name="business-outline" size={52} color={Colors.textMuted} /><Text style={s.emptyTitle}>Aucun terrain proposé</Text><Text style={s.emptyText}>Sois le premier à en proposer un !</Text></View>}
           <View style={{height:100}} />
         </ScrollView>
-        <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
       </View>
     );
   }
@@ -1470,7 +1889,8 @@ export default function App() {
         <View style={s.mapHeader}>
           <Text style={s.mapHeaderTitle}>🗺️ Carte</Text>
           <View style={userLocation ? s.gpsChipOn : s.gpsChipOff}>
-            <Text style={s.gpsChipText}>{userLocation ? `📍 ${matchesWithDist.length} match${matchesWithDist.length>1?'s':''}` : '📍 GPS désactivé'}</Text>
+            <Ionicons name="location" size={12} color={userLocation?Colors.green:Colors.textMuted} />
+            <Text style={s.gpsChipText}>{userLocation ? `${matchesWithDist.length} match${matchesWithDist.length>1?'s':''}` : 'GPS désactivé'}</Text>
           </View>
         </View>
         {!userLocation && (
@@ -1485,7 +1905,7 @@ export default function App() {
         <MapView
           style={{ flex:1, marginTop: Platform.OS==='ios' ? 100 : 88 }}
           customMapStyle={DARK_MAP_STYLE}
-          initialRegion={{ latitude:userLocation?.latitude??48.8566, longitude:userLocation?.longitude??2.3522, latitudeDelta:0.05, longitudeDelta:0.05 }}
+          initialRegion={{ latitude:userLocation?.latitude??42.6977, longitude:userLocation?.longitude??2.8956, latitudeDelta:0.05, longitudeDelta:0.05 }}
           showsUserLocation
           showsMyLocationButton={false}
           onPress={()=>setSelectedMapMatch(null)}
@@ -1496,7 +1916,7 @@ export default function App() {
             return (
               <Marker key={m.id} coordinate={{ latitude:m.venue.latitude, longitude:m.venue.longitude }} onPress={()=>setSelectedMapMatch(m)} tracksViewChanges={false}>
                 <View style={[s.mapPin, { borderColor: cfg?.color??Colors.green, backgroundColor: isSelected ? cfg?.color+'33' : '#0D1117' }]}>
-                  <Text style={s.mapPinEmoji}>{cfg?.emoji??'⚽'}</Text>
+                  <Ionicons name={(cfg?.iconName??'football') as any} size={16} color={cfg?.color??Colors.green} />
                   {isSelected && <View style={[s.mapPinDot,{backgroundColor:cfg?.color??Colors.green}]}/>}
                 </View>
               </Marker>
@@ -1508,7 +1928,7 @@ export default function App() {
           <View style={s.mapBottomCard}>
             <View style={s.mapCardHeader}>
               <View style={[s.badge,{backgroundColor:selCfg.dimColor,borderColor:selCfg.borderColor}]}>
-                <Text style={[s.badgeText,{color:selCfg.color}]}>{selCfg.emoji} {selCfg.label}</Text>
+                <Ionicons name={selCfg.iconName as any} size={10} color={selCfg.color} /><Text style={[s.badgeText,{color:selCfg.color}]}>{selCfg.label}</Text>
               </View>
               {selectedMapMatch.distanceKm !== null && selectedMapMatch.distanceKm !== undefined && <View style={s.distPill}><Text style={s.distPillText}>{selectedMapMatch.distanceKm.toFixed(1)} km</Text></View>}
               <TouchableOpacity style={s.mapCardCloseBtn} onPress={()=>setSelectedMapMatch(null)} accessibilityRole="button" accessibilityLabel="Fermer">
@@ -1516,8 +1936,8 @@ export default function App() {
               </TouchableOpacity>
             </View>
             <Text style={s.mapCardTitle} numberOfLines={1}>{selectedMapMatch.title}</Text>
-            <Text style={s.mapCardSub}>📍 {selectedMapMatch.venue?.name}</Text>
-            <Text style={s.mapCardSub}>📅 {new Date(selectedMapMatch.scheduled_at).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="location" size={12} color={Colors.textMuted} /><Text style={s.mapCardSub}>{selectedMapMatch.venue?.name ?? selectedMapMatch.venue_name ?? ''}</Text></View>
+            <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="calendar" size={12} color={Colors.textMuted} /><Text style={s.mapCardSub}>{new Date(selectedMapMatch.scheduled_at).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</Text></View>
             <View style={s.mapCardFooter}>
               <View style={s.mapCardPlayers}>
                 <View style={s.barBg}><View style={[s.barFill,{width:`${Math.min(pctSel*100,100)}%` as any,backgroundColor:pctSel>=1?Colors.greenDark:pctSel>=0.8?Colors.greenLight:Colors.green}]}/></View>
@@ -1529,7 +1949,7 @@ export default function App() {
             </View>
           </View>
         )}
-        <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
       </View>
     );
   }
@@ -1595,7 +2015,7 @@ export default function App() {
                 const isAddr = item.content?.startsWith('📍');
                 return (
                   <View style={[s.msgWrap, isMe&&s.msgWrapMe]}>
-                    {!isMe&&<TouchableOpacity onPress={()=>{ if(item.user?.id){ setSelectedPlayer(item.user.id); setScreen('player_profile'); } }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
+                    {!isMe&&<TouchableOpacity onPress={()=>{ if(item.user?.id){ seedPlayerCache({ id: item.user.id, pseudo: item.user.pseudo ?? 'Joueur', reputation: item.user.reputation_score ?? 0 }); setSelectedPlayer(item.user.id); setScreen('player_profile'); } }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
                     <TouchableOpacity onLongPress={()=>handleMessageLongPressStoreReady(item, 'match')} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Appui long pour signaler ce message" accessibilityHint="Maintenez appuyé pour voir les options">
                       <View style={[s.msgBubble, isMe&&s.msgBubbleMe, isAddr&&s.msgBubbleAddr]}>
                         <Text style={[s.msgText, isMe&&s.msgTextMe, isAddr&&s.msgTextAddr]}>{item.content}</Text>
@@ -1643,20 +2063,32 @@ export default function App() {
     return (
       <View style={s.container}>
         <StatusBar barStyle="light-content" />
-        <View style={[s.subHeader, {justifyContent:'center', flexDirection:'column', paddingBottom:10}]}>
-          <Text style={s.subHeaderTitle}>👥 JOUEURS</Text>
-          <Text style={{fontSize:12, color:Colors.textMuted, fontWeight:'600', marginTop:2}}>Joueurs actifs à Perpignan</Text>
+        {/* Header unifié — même structure que la page Matchs */}
+        <View style={s.homeHeader}>
+          <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
+            <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="mail-outline" size={11} color={Colors.textMuted} /><Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>Contact</Text></View>
+          </TouchableOpacity>
+          <View style={s.homeLogoWrap} pointerEvents="none">
+            <Image source={require('./assets/logo footmatch transparent.png')} style={s.homeLogo} resizeMode="contain" fadeDuration={0} />
+          </View>
+          <TouchableOpacity style={s.searchBtn} onPress={()=>setPlayersSearchSignal(n=>n+1)} accessibilityRole="button" accessibilityLabel="Rechercher un joueur">
+            <Ionicons name="search-outline" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
         </View>
         <PlayersScreen
           currentUserId={currentUser?.id ?? null}
           blockedUserIds={blockedUserIds}
           guestMode={guestMode}
+          cityName={userCityName}
           onInvite={(playerId) => openInviteModal(playerId)}
           onShowGuestModal={() => setShowGuestModal(true)}
           onViewProfile={(playerId) => { setSelectedPlayer(playerId); setScreen('player_profile'); }}
+          searchSignal={playersSearchSignal}
         />
-        <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
         {renderInviteModal()}
+        {renderToast()}
+        <GuestModal visible={showGuestModal} onRegister={exitGuestMode} onLogin={()=>{setGuestMode(false);setShowGuestModal(false);setScreen('login');}} onClose={()=>setShowGuestModal(false)} />
       </View>
     );
   }
@@ -1674,6 +2106,7 @@ export default function App() {
           onToggleBlock={() => toggleBlockedUserStoreReady(selectedPlayer)}
         />
         {renderInviteModal()}
+        {renderToast()}
       </>
     );
   }
@@ -1684,9 +2117,32 @@ export default function App() {
     return (
       <View style={s.container}>
         <StatusBar barStyle="light-content" />
-        <View style={[s.subHeader, {justifyContent:'center'}]}>
-          <Text style={s.subHeaderTitle}>💬 COMMUNAUTÉ</Text>
+        {/* Header unifié — même structure que la page Matchs */}
+        <View style={s.homeHeader}>
+          <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
+            <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="mail-outline" size={11} color={Colors.textMuted} /><Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>Contact</Text></View>
+          </TouchableOpacity>
+          <View style={s.homeLogoWrap} pointerEvents="none">
+            <Image source={require('./assets/logo footmatch transparent.png')} style={s.homeLogo} resizeMode="contain" fadeDuration={0} />
+          </View>
+          {/* Placeholder côté droit pour symétrie */}
+          <View style={{width:46}} />
         </View>
+        {/* Bouton Compétitions — teaser fonctionnalité à venir */}
+        <TouchableOpacity
+          style={s.competitionsTeaser}
+          onPress={()=>Alert.alert('🔒 Bientôt disponible','La section Compétitions (tournois, coupes & ligue) arrive très prochainement sur FootMatch !')}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Compétitions — bientôt disponible"
+        >
+          <View style={s.competitionsTeaserIcon}><Text style={{fontSize:18}}>🏆</Text></View>
+          <View style={{flex:1}}>
+            <Text style={s.competitionsTeaserTitle}>Compétitions</Text>
+            <Text style={s.competitionsTeaserSub}>Tournois, coupes & ligue</Text>
+          </View>
+          <View style={s.competitionsTeaserBadge}><Text style={s.competitionsTeaserBadgeText}>Bientôt</Text></View>
+        </TouchableOpacity>
         <CommunityScreen
           onJoinMatch={(id) => { /* navigate to match detail */ }}
           onNavigate={(scr, filter) => {
@@ -1694,100 +2150,108 @@ export default function App() {
             setScreen(scr as any);
           }}
         />
-        <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
       </View>
     );
   }
 
   if (screen==='competitions') {
+    // Guard : ces écrans nécessitent un utilisateur connecté
+    if (!currentUser) { setScreen('login'); return null; }
     return (
       <View style={s.container}>
         <CompetitionsScreen
-          currentUserId={currentUser!.id}
+          currentUserId={currentUser.id}
           onOpenTeam={(t) => { setSelectedTeam(t); setScreen('team_detail'); }}
           onOpenChampionship={(c) => { setSelectedChampionship(c); setScreen('championship_detail'); }}
           onOpenCup={(c) => { setSelectedCup(c); setScreen('cup_detail'); }}
         />
-        <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
       </View>
     );
   }
 
   // ── ÉQUIPE (détail) ───────────────────────────────────────────────────────────
   if (screen==='team_detail' && selectedTeam) {
+    if (!currentUser) { setScreen('login'); return null; }
     return <TeamDetailScreen
       team={selectedTeam}
-      currentUserId={currentUser!.id}
+      currentUserId={currentUser.id}
       onBack={() => setScreen('competitions')}
     />;
   }
 
   // ── COUPE (détail bracket) ────────────────────────────────────────────────────
   if (screen==='cup_detail' && selectedCup) {
+    if (!currentUser) { setScreen('login'); return null; }
     return <CupDetailScreen
       cup={selectedCup}
-      currentUserId={currentUser!.id}
+      currentUserId={currentUser.id}
       onBack={() => setScreen('competitions')}
     />;
   }
 
   // ── CHAMPIONNAT (liste/créer) — conservé pour accès direct ───────────────────
   if (screen==='championship') {
+    if (!currentUser) { setScreen('login'); return null; }
     return (
       <View style={s.container}>
         <ChampionshipScreen
-          currentUserId={currentUser!.id}
+          currentUserId={currentUser.id}
           onOpen={(c)=>{ setSelectedChampionship(c); setScreen('championship_detail'); }}
         />
-        <BottomNav active="competitions" onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active="competitions" onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
       </View>
     );
   }
 
   // ── CHAMPIONNAT (détail) ──────────────────────────────────────────────────────
   if (screen==='championship_detail' && selectedChampionship) {
+    if (!currentUser) { setScreen('login'); return null; }
     return <ChampionshipDetailScreen
       championship={selectedChampionship}
-      currentUserId={currentUser!.id}
+      currentUserId={currentUser.id}
       onBack={()=>setScreen('competitions')}
     />;
   }
 
   // ── RÉPUTATION ────────────────────────────────────────────────────────────────
   if (screen==='reputation') {
-    return <ReputationScreen userId={currentUser!.id} currentUserId={currentUser!.id} onBack={()=>setScreen('profile')} />;
+    if (!currentUser) { setScreen('login'); return null; }
+    return <ReputationScreen userId={currentUser.id} currentUserId={currentUser.id} onBack={()=>setScreen('profile')} />;
   }
 
   // ── PROFIL ────────────────────────────────────────────────────────────────────
   if (screen==='profile') {
+    if (guestMode) {
+      return (
+        <View style={s.container}>
+          <StatusBar barStyle="light-content" />
+          <View style={s.pageHeader}>
+            <Text style={s.pageHeaderTitle}>Mon Profil</Text>
+          </View>
+          <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, gap:16}}>
+            <Ionicons name="person-outline" size={48} color={Colors.textMuted} />
+            <Text style={{fontSize:20, fontWeight:'900', color:Colors.text, textAlign:'center'}}>Ton profil t'attend</Text>
+            <Text style={{fontSize:14, color:Colors.textMuted, textAlign:'center', lineHeight:22}}>
+              Crée un compte gratuit pour accéder à ton profil, tes matchs et ta réputation.
+            </Text>
+            <TouchableOpacity style={s.btn} onPress={exitGuestMode} accessibilityRole="button" accessibilityLabel="S'inscrire gratuitement">
+              <Text style={s.btnText}>S'inscrire gratuitement</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setGuestMode(false); setShowGuestModal(false); setScreen('login'); }} style={{paddingVertical:10}}>
+              <Text style={{fontSize:14, color:Colors.textMuted, fontWeight:'600'}}>J'ai déjà un compte · Se connecter</Text>
+            </TouchableOpacity>
+          </View>
+          <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={() => requireAuth(() => setScreen('create'))} />
+        </View>
+      );
+    }
     const pastMatches=matches.filter((m:any)=>myMatches.includes(m.id)&&new Date(m.scheduled_at)<new Date());
     const upcomingMatches=matches.filter((m:any)=>myMatches.includes(m.id)&&new Date(m.scheduled_at)>new Date());
     const ratedCount=Object.keys(myRatings).length;
     const avgRating=ratedCount>0?(Object.values(myRatings).reduce((a,b)=>a+b,0)/ratedCount).toFixed(1):null;
     const toRate=pastMatches.filter((m:any)=>!myRatings[m.id]);
-    // Calcul du streak (semaines consécutives avec au moins 1 match)
-    const matchDates = matches
-      .filter((m:any) => myMatches.includes(m.id) && new Date(m.scheduled_at) <= new Date())
-      .map((m:any) => new Date(m.scheduled_at));
-    let streak = 0;
-    if (matchDates.length > 0) {
-      const getWeek = (d: Date) => {
-        const start = new Date(d); start.setHours(0,0,0,0);
-        const day = start.getDay() || 7; start.setDate(start.getDate() - day + 1);
-        return start.getTime();
-      };
-      const weeks = new Set(matchDates.map(getWeek));
-      const sortedWeeks = Array.from(weeks).sort((a,b)=>b-a);
-      const oneWeek = 7*24*60*60*1000;
-      const thisWeek = getWeek(new Date());
-      if (sortedWeeks[0] === thisWeek || sortedWeeks[0] === thisWeek - oneWeek) {
-        streak = 1;
-        for (let i = 1; i < sortedWeeks.length; i++) {
-          if (sortedWeeks[i-1] - sortedWeeks[i] === oneWeek) streak++;
-          else break;
-        }
-      }
-    }
     const cardStats = { matchesPlayed:myMatches.length, matchesOrganized:myCreatedMatches.length, avgRating:avgRating?parseFloat(avgRating):null, ratingsGiven:ratedCount, noShows:0 };
     const profileScore = currentUser?.reputation_score ?? 0;
     const profileRank = getLevelFromScore(profileScore);
@@ -1801,7 +2265,7 @@ export default function App() {
           <Text style={s.pageHeaderTitle}>Mon Profil</Text>
           <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="Se déconnecter"><Text style={s.logoutBtnText}>Déconnexion</Text></TouchableOpacity>
         </View>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView ref={profileScrollRef} showsVerticalScrollIndicator={false}>
 
           {/* Carte pleine largeur — même rendu que PlayerProfileScreen */}
           <View style={{ alignItems: 'center', paddingTop: Spacing.xl, paddingBottom: Spacing.lg }}>
@@ -1841,11 +2305,74 @@ export default function App() {
                 );
               }}
             >
-              <Text style={{fontSize:15}}>{userSkill ? SKILLS.find(sk => sk.key === userSkill)?.emoji ?? '⚡' : '⚡'}</Text>
+              <Ionicons name={(SKILLS.find(sk => sk.key === userSkill)?.iconName ?? 'flash') as any} size={15} color={userSkill ? Colors.green : Colors.textMuted} />
               <Text style={{fontSize:12, color: userSkill ? Colors.green : Colors.textMuted, fontWeight:'700'}}>
                 {userSkill ? SKILLS.find(sk => sk.key === userSkill)?.label ?? 'Skill' : 'Choisir mon skill'}
               </Text>
             </TouchableOpacity>
+          </View>
+
+          {/* ── Disponibilités habituelles (édition profil) ── */}
+          <View style={[s.dispoBlock, {marginHorizontal:Spacing.xl, marginTop:Spacing.md}]}>
+            <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:6}}>
+              <Ionicons name="calendar-outline" size={15} color={Colors.green} />
+              <Text style={s.fieldLabel}>Mes disponibilités habituelles</Text>
+            </View>
+            <View style={{flexDirection:'row', flexWrap:'wrap', gap:7, marginBottom:10}}>
+              {['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(jour=>{
+                const isSelected = userDisponibilites.some(d=>d.jour===jour);
+                return (
+                  <TouchableOpacity
+                    key={jour}
+                    style={[s.dispoJourBtn, isSelected && s.dispoJourBtnActive]}
+                    onPress={()=>{
+                      let next: {jour:string;debut:string;fin:string}[];
+                      if(isSelected){ next=userDisponibilites.filter(d=>d.jour!==jour); }
+                      else { next=[...userDisponibilites,{jour,debut:'18:00',fin:'20:00'}]; }
+                      updateDisponibilites(next);
+                    }}
+                    activeOpacity={0.75}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={jour}
+                    accessibilityState={{checked: isSelected}}
+                  >
+                    <Text style={[s.dispoJourText, isSelected && s.dispoJourTextActive]}>{jour}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {userDisponibilites.length === 0 && (
+              <Text style={{fontSize:12, color:Colors.textDim, fontStyle:'italic'}}>Aucun créneau — touche un jour pour l'ajouter</Text>
+            )}
+            {userDisponibilites.map(d=>(
+              <View key={d.jour} style={s.dispoCreneauRow}>
+                <Text style={s.dispoCrenJour}>{d.jour}</Text>
+                <View style={{flex:1, flexDirection:'row', alignItems:'center', gap:6}}>
+                  <Text style={s.dispoCrenLabel}>Début</Text>
+                  <TextInput
+                    style={s.dispoCrenInput}
+                    value={d.debut}
+                    onChangeText={v=>{const next=userDisponibilites.map(x=>x.jour===d.jour?{...x,debut:v}:x);updateDisponibilites(next);}}
+                    placeholder="17:00"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                    onEndEditing={()=>updateDisponibilites(userDisponibilites)}
+                  />
+                  <Text style={s.dispoCrenLabel}>Fin</Text>
+                  <TextInput
+                    style={s.dispoCrenInput}
+                    value={d.fin}
+                    onChangeText={v=>{const next=userDisponibilites.map(x=>x.jour===d.jour?{...x,fin:v}:x);updateDisponibilites(next);}}
+                    placeholder="19:00"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                    onEndEditing={()=>updateDisponibilites(userDisponibilites)}
+                  />
+                </View>
+              </View>
+            ))}
           </View>
 
           <TouchableOpacity style={s.shareProfileBtn} onPress={handleShareProfile} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Partager mon profil">
@@ -1853,17 +2380,6 @@ export default function App() {
             <Text style={s.shareProfileBtnText}>Partager mon profil</Text>
           </TouchableOpacity>
 
-          {/* Streak banner */}
-          {streak > 0 && (
-            <View style={s.streakBanner}>
-              <Text style={s.streakFire}>🔥</Text>
-              <View>
-                <Text style={s.streakTitle}>{streak} semaine{streak > 1 ? 's' : ''} de suite !</Text>
-                <Text style={s.streakSub}>Continue pour monter de division</Text>
-              </View>
-              <Text style={s.streakCount}>{streak}</Text>
-            </View>
-          )}
           <View style={s.statsGrid}>
             <View style={s.statCard}><Text style={s.statCardN}>{myMatches.length}</Text><Text style={s.statCardL}>Total matchs</Text></View>
             <View style={s.statCard}><Text style={s.statCardN}>{upcomingMatches.length}</Text><Text style={s.statCardL}>À venir</Text></View>
@@ -1873,7 +2389,10 @@ export default function App() {
 
           {profileLvlProgress.next && (
             <View style={s.advancedStats}>
-              <Text style={s.levelProgressTitle}>🏆 Progression</Text>
+              <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:8}}>
+                <Ionicons name="trophy" size={15} color={Colors.green} />
+                <Text style={s.levelProgressTitle}>Progression</Text>
+              </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: profileCfg.color }}>{profileRank}</Text>
                 <Text style={{ fontSize: 11, color: Colors.textMuted }}>{profileLvlProgress.pointsToNext} pts avant {profileLvlProgress.next}</Text>
@@ -1886,7 +2405,10 @@ export default function App() {
           )}
 
           <View style={s.advancedStats}>
-            <Text style={s.advancedStatsTitle}>⚽ Contribution offensive</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:8}}>
+              <Ionicons name="football" size={15} color={Colors.green} />
+              <Text style={s.advancedStatsTitle}>Contribution offensive</Text>
+            </View>
             <Text style={{ fontSize: 12, color: Colors.textMuted, marginBottom: 12 }}>
               Mets a jour tes buts et passes decisives apres tes matchs joues.
             </Text>
@@ -1919,8 +2441,58 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          {toRate.length>0&&<View style={{paddingHorizontal:Spacing.xl,marginBottom:Spacing.lg}}>
-            <Text style={s.sectionTitle}>⭐ À noter</Text>
+          {pendingInvites.length > 0 && (
+            <View style={{paddingHorizontal:Spacing.xl, marginBottom:Spacing.lg}}>
+              <View style={{flexDirection:'row', alignItems:'center', gap:8, marginBottom:12}}>
+                <Ionicons name="mail-unread" size={15} color="#FFD700" />
+                <Text style={s.sectionTitle}>Invitations</Text>
+                <View style={{backgroundColor:'#FFD700', borderRadius:10, paddingHorizontal:7, paddingVertical:1, minWidth:18, alignItems:'center'}}>
+                  <Text style={{fontSize:10, fontWeight:'900', color:'#000'}}>{pendingInvites.length}</Text>
+                </View>
+              </View>
+              {pendingInvites.map((inv: any) => {
+                const invMatch = inv.match;
+                const fromPseudo = inv.from_user?.pseudo ?? 'Un joueur';
+                if (!invMatch) return null;
+                const invDateStr = new Date(invMatch.scheduled_at).toLocaleDateString('fr-FR', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+                const spots = (invMatch.max_players ?? 0) - (invMatch.current_players ?? 0);
+                return (
+                  <View key={inv.id} style={{backgroundColor:Colors.bg3, borderRadius:Radius.md, padding:Spacing.md, marginBottom:8, borderWidth:1, borderColor:'rgba(255,215,0,0.2)'}}>
+                    <Text style={{fontSize:12, color:'#FFD700', fontWeight:'700', marginBottom:5}}>⚽ {fromPseudo} t'invite à jouer</Text>
+                    <Text style={{fontSize:14, fontWeight:'800', color:Colors.text}} numberOfLines={1}>{invMatch.title}</Text>
+                    <Text style={{fontSize:11, color:Colors.textMuted, marginTop:2}}>
+                      {invMatch.venue?.name ?? ''}{invMatch.venue?.city ? ` · ${invMatch.venue.city}` : ''} · {invDateStr}
+                    </Text>
+                    <Text style={{fontSize:11, color:Colors.textMuted}}>
+                      {invMatch.current_players}/{invMatch.max_players} joueurs · {spots > 0 ? `${spots} place${spots > 1 ? 's' : ''} libre${spots > 1 ? 's' : ''}` : 'Complet'}
+                    </Text>
+                    <View style={{flexDirection:'row', gap:8, marginTop:10}}>
+                      <TouchableOpacity
+                        style={{flex:1, backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingVertical:9, alignItems:'center', borderWidth:1, borderColor:Colors.greenBorder}}
+                        onPress={() => acceptInvite(inv)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Rejoindre ${invMatch.title}`}>
+                        <Text style={{color:Colors.green, fontWeight:'800', fontSize:13}}>Rejoindre →</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{flex:1, backgroundColor:Colors.bg2, borderRadius:Radius.full, paddingVertical:9, alignItems:'center', borderWidth:1, borderColor:Colors.border}}
+                        onPress={() => declineInvite(inv.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Refuser l'invitation">
+                        <Text style={{color:Colors.textMuted, fontWeight:'700', fontSize:13}}>Refuser</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {toRate.length>0&&<View onLayout={(e)=>{if(scrollToRatingsRef.current){scrollToRatingsRef.current=false;const y=e.nativeEvent.layout.y;setTimeout(()=>profileScrollRef.current?.scrollTo({y,animated:true}),50);}}} style={{paddingHorizontal:Spacing.xl,marginBottom:Spacing.lg}}>
+            <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}>
+              <Ionicons name="star" size={15} color={Colors.green} />
+              <Text style={s.sectionTitle}>À noter</Text>
+            </View>
             {toRate.map((m:any)=>(
               <TouchableOpacity key={m.id} style={s.rateCard} onPress={()=>loadMatchDetail(m)} accessibilityRole="button" accessibilityLabel={`Voir et noter le match ${m.title}`}>
                 <View style={{flex:1}}><Text style={s.rateCardTitle}>{m.title}</Text><Text style={s.rateCardSub}>{new Date(m.scheduled_at).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</Text></View>
@@ -1930,30 +2502,30 @@ export default function App() {
           </View>}
 
           {upcomingMatches.length>0&&<View style={{paddingHorizontal:Spacing.xl,marginBottom:Spacing.lg}}>
-            <Text style={s.sectionTitle}>📅 Prochains matchs</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}><Ionicons name="calendar" size={15} color={Colors.green} /><Text style={s.sectionTitle}>Prochains matchs</Text></View>
             {upcomingMatches.slice(0,3).map((m:any)=>{
               const cfg=MATCH_TYPES[m.type as keyof typeof MATCH_TYPES];
-              return <TouchableOpacity key={m.id} style={s.miniCard} onPress={()=>loadMatchDetail(m)} accessibilityRole="button" accessibilityLabel={`Voir le match ${m.title}`}><View style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.emoji} {cfg?.label}</Text></View><Text style={s.miniCardTitle}>{m.title}</Text><Text style={s.miniCardSub}>{m.venue?.name} · {new Date(m.scheduled_at).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</Text></TouchableOpacity>;
+              return <TouchableOpacity key={m.id} style={s.miniCard} onPress={()=>loadMatchDetail(m)} accessibilityRole="button" accessibilityLabel={`Voir le match ${m.title}`}><View style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.label}</Text></View><Text style={s.miniCardTitle}>{m.title}</Text><Text style={s.miniCardSub}>{m.venue?.name ?? m.venue_name ?? ''} · {new Date(m.scheduled_at).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</Text></TouchableOpacity>;
             })}
           </View>}
 
           {pastMatches.length > 0 && (
             <View style={{paddingHorizontal:Spacing.xl, marginBottom:Spacing.lg}}>
-              <Text style={s.sectionTitle}>🕐 Derniers matchs</Text>
+              <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}><Ionicons name="time" size={15} color={Colors.green} /><Text style={s.sectionTitle}>Derniers matchs</Text></View>
               {pastMatches.slice(0, 5).map((m: any) => {
                 const cfg = MATCH_TYPES[m.type as keyof typeof MATCH_TYPES];
                 const rated = !!myRatings[m.id];
                 return (
                   <TouchableOpacity key={m.id} style={s.miniCard} onPress={() => loadMatchDetail(m)} accessibilityRole="button" accessibilityLabel={`Voir le match ${m.title}`}>
                     <View style={[s.badge, {backgroundColor: cfg?.dimColor, borderColor: cfg?.borderColor}]}>
-                      <Text style={[s.badgeText, {color: cfg?.color}]}>{cfg?.emoji} {cfg?.label}</Text>
+                      <Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.badgeText, {color: cfg?.color}]}>{cfg?.label}</Text>
                     </View>
                     <Text style={s.miniCardTitle}>{m.title}</Text>
                     <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
                       <Text style={s.miniCardSub}>{new Date(m.scheduled_at).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'})}</Text>
                       {rated
                         ? <Text style={{fontSize:11, color:Colors.green, fontWeight:'700'}}>✓ Noté {myRatings[m.id]}/5</Text>
-                        : <Text style={{fontSize:11, color:Colors.greenLight, fontWeight:'700'}}>⭐ À noter</Text>
+                        : <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="star" size={11} color={Colors.greenLight} /><Text style={{fontSize:11, color:Colors.greenLight, fontWeight:'700'}}>À noter</Text></View>
                       }
                     </View>
                   </TouchableOpacity>
@@ -1965,7 +2537,8 @@ export default function App() {
           {/* Légal & Danger Zone */}
           <View style={s.dangerZone}>
             <TouchableOpacity style={s.legalProfileBtn} onPress={()=>setScreen('legal')} accessibilityRole="button" accessibilityLabel="Voir la politique de confidentialité et les CGU">
-              <Text style={s.legalProfileBtnText}>📄 Politique de confidentialité & CGU</Text>
+              <Ionicons name="document-text-outline" size={14} color={Colors.textMuted} />
+              <Text style={s.legalProfileBtnText}>Politique de confidentialité & CGU</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.deleteAccountBtn} onPress={handleDeleteAccountStoreReady} accessibilityRole="button" accessibilityLabel="Supprimer mon compte définitivement">
               <Text style={s.deleteAccountBtnText}>🗑️ Supprimer mon compte</Text>
@@ -1974,7 +2547,7 @@ export default function App() {
 
           <View style={{height:100}} />
         </ScrollView>
-        <BottomNav active={screen} onNavigate={setScreen} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
 
         {/* Avatar Picker supprimé — la carte FootMatch est l'identité du joueur */}
       </View>
@@ -1999,7 +2572,7 @@ export default function App() {
       <View style={s.container}>
         <View style={s.subHeader}>
           <TouchableOpacity style={s.backBtn} onPress={()=>setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour"><Ionicons name="chevron-back" size={22} color={Colors.green} /></TouchableOpacity>
-          <View style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.emoji} {cfg?.label}</Text></View>
+          <View style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.label}</Text></View>
           <TouchableOpacity onPress={handleShare} style={s.shareDetailBtn} accessibilityRole="button" accessibilityLabel="Partager ce match">
             <Ionicons name="share-social-outline" size={16} color='#000' />
             <Text style={s.shareDetailBtnText}>Partager</Text>
@@ -2007,21 +2580,21 @@ export default function App() {
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:Spacing.xl}}>
           <Text style={s.detailTitle}>{selectedMatch.title}</Text>
-          {selectedMatch.avg_rating&&<View style={s.avgRating}><Text style={s.avgRatingStars}>{'⭐'.repeat(Math.round(selectedMatch.avg_rating))}</Text><Text style={s.avgRatingText}>{selectedMatch.avg_rating.toFixed(1)}/5 · {selectedMatch.rating_count} avis</Text></View>}
+          {selectedMatch.avg_rating&&<View style={s.avgRating}><View style={{flexDirection:'row',gap:2}}>{Array.from({length:Math.round(selectedMatch.avg_rating)}).map((_,i)=><Ionicons key={i} name="star" size={14} color={Colors.greenLight} />)}</View><Text style={s.avgRatingText}>{selectedMatch.avg_rating.toFixed(1)}/5 · {selectedMatch.rating_count} avis</Text></View>}
           <View style={s.detailStats}>
-            <View style={s.detailStat}><Text style={s.detailStatN}>{actualCurrentPlayers}</Text><Text style={s.detailStatL}>/ {selectedMatch.max_players} joueurs</Text></View>
+            <View style={s.detailStat}><View style={s.detailStatPrimary}><Text style={s.detailStatN} adjustsFontSizeToFit numberOfLines={1}>{actualCurrentPlayers}/{selectedMatch.max_players}</Text></View><Text style={s.detailStatL}>joueurs</Text></View>
             <View style={s.heroStatDiv} />
-            <View style={s.detailStat}><Text style={s.detailStatN}>{isPast?'✅':'🆓'}</Text><Text style={s.detailStatL}>{isPast?'Terminé':'Gratuit'}</Text></View>
+            <View style={s.detailStat}><View style={s.detailStatPrimary}>{isPast?<Ionicons name="checkmark-circle" size={22} color={Colors.green} />:(selectedMatch.price_per_player??0)>0?<Text style={s.detailStatN} adjustsFontSizeToFit numberOfLines={1}>{selectedMatch.price_per_player}€</Text>:<Ionicons name="gift" size={22} color={Colors.greenLight} />}</View><Text style={s.detailStatL}>{isPast?'Terminé':(selectedMatch.price_per_player??0)>0?'/ joueur':'Gratuit'}</Text></View>
             <View style={s.heroStatDiv} />
-            <View style={s.detailStat}><Text style={s.detailStatN}>{dist?`${dist}km`:'📍'}</Text><Text style={s.detailStatL}>{dist?'de toi':'Terrain'}</Text></View>
+            <View style={s.detailStat}><View style={s.detailStatPrimary}><Text style={s.detailStatN}>{new Date(selectedMatch.scheduled_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</Text></View><Text style={s.detailStatL}>Heure</Text></View>
           </View>
           <View style={s.barBgLarge}><View style={[s.barFillLarge,{width:`${Math.min(pct*100,100)}%` as any,backgroundColor:barColor}]} /></View>
           <View style={s.infoCard}>
-            <View style={s.infoRow}><Text style={s.infoIcon}>📍</Text><View style={{flex:1}}><Text style={s.infoLabel}>Terrain</Text><Text style={s.infoValue}>{selectedMatch.venue?.name}</Text><Text style={s.infoSub}>{selectedMatch.venue?.address}, {selectedMatch.venue?.city}</Text></View></View>
-            <View style={s.infoRow}><Text style={s.infoIcon}>📅</Text><View><Text style={s.infoLabel}>Date & Heure</Text><Text style={s.infoValue}>{new Date(selectedMatch.scheduled_at).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</Text><Text style={s.infoSub}>{new Date(selectedMatch.scheduled_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</Text></View></View>
-            {selectedMatch.description?<View style={s.infoRow}><Text style={s.infoIcon}>💬</Text><View><Text style={s.infoLabel}>Description</Text><Text style={s.infoValue}>{selectedMatch.description}</Text></View></View>:null}
+            <View style={s.infoRow}><Ionicons name="location" size={20} color={Colors.green} style={{width:28}} /><View style={{flex:1}}><Text style={s.infoLabel}>Terrain</Text><Text style={s.infoValue}>{selectedMatch.venue?.name ?? selectedMatch.venue_name ?? ''}</Text>{(selectedMatch.venue?.address||selectedMatch.venue_address)?<Text style={s.infoSub}>{selectedMatch.venue?.address??selectedMatch.venue_address}{(selectedMatch.venue?.city||selectedMatch.venue_city||selectedMatch.venue_postal)?`, ${[selectedMatch.venue?.city??selectedMatch.venue_city,selectedMatch.venue_postal].filter(Boolean).join(' ')}`:''}</Text>:null}</View></View>
+            <View style={s.infoRow}><Ionicons name="calendar" size={20} color={Colors.green} style={{width:28}} /><View><Text style={s.infoLabel}>Date & Heure</Text><Text style={s.infoValue}>{new Date(selectedMatch.scheduled_at).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</Text><Text style={s.infoSub}>{new Date(selectedMatch.scheduled_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</Text></View></View>
+            {selectedMatch.description?<View style={s.infoRow}><Ionicons name="chatbubble" size={20} color={Colors.green} style={{width:28}} /><View style={{flex:1}}><Text style={s.infoLabel}>Description</Text><Text style={s.infoValue}>{selectedMatch.description}</Text></View></View>:null}
           </View>
-          {(isJoined||isOrganizer)&&!isPast&&<TouchableOpacity style={s.chatBtn} onPress={()=>setScreen('chat')} accessibilityRole="button" accessibilityLabel="Ouvrir le chat du match"><Text style={s.chatBtnText}>💬 Ouvrir le chat du match</Text></TouchableOpacity>}
+          {(isJoined||isOrganizer)&&!isPast&&<TouchableOpacity style={s.chatBtn} onPress={()=>setScreen('chat')} accessibilityRole="button" accessibilityLabel="Ouvrir le chat du match"><Ionicons name="chatbubbles" size={16} color="#000" /><Text style={s.chatBtnText}>Ouvrir le chat du match</Text></TouchableOpacity>}
           {canRate&&(
   <View style={[s.ratingBox, myRating ? s.ratingBoxDone : null]}>
     {myRating ? (
@@ -2032,8 +2605,8 @@ export default function App() {
         </View>
         <View style={s.starsRow}>
           {[1,2,3,4,5].map((star)=>(
-            <TouchableOpacity key={star} onPress={()=>handleRate(selectedMatch.id,star)} disabled={ratingLoading} activeOpacity={0.7} style={s.starBtn} accessibilityRole="button" accessibilityLabel={`Donner ${star} étoile${star>1?'s':''}`}>
-              <Text style={[s.star, myRating>=star&&s.starActive]}>{myRating>=star?'⭐':'☆'}</Text>
+            <TouchableOpacity key={star} onPress={()=>requestRating(selectedMatch.id,star)} disabled={ratingLoading} activeOpacity={0.7} style={s.starBtn} accessibilityRole="button" accessibilityLabel={`Donner ${star} étoile${star>1?'s':''}`}>
+              <Ionicons name={myRating>=star?'star':'star-outline'} size={36} color={myRating>=star?Colors.greenLight:'rgba(255,255,255,0.2)'} />
             </TouchableOpacity>
           ))}
         </View>
@@ -2048,20 +2621,23 @@ export default function App() {
         <Text style={s.ratingSubtitle}>Fair-play, organisation, ambiance</Text>
         <View style={s.starsRow}>
           {[1,2,3,4,5].map((star)=>(
-            <TouchableOpacity key={star} onPress={()=>handleRate(selectedMatch.id,star)} disabled={ratingLoading} activeOpacity={0.7} style={s.starBtn} accessibilityRole="button" accessibilityLabel={`Donner ${star} étoile${star>1?'s':''}`}>
-              <Text style={[s.star, myRating>=star&&s.starActive]}>{myRating>=star?'⭐':'☆'}</Text>
+            <TouchableOpacity key={star} onPress={()=>requestRating(selectedMatch.id,star)} disabled={ratingLoading} activeOpacity={0.7} style={s.starBtn} accessibilityRole="button" accessibilityLabel={`Donner ${star} étoile${star>1?'s':''}`}>
+              <Ionicons name={myRating>=star?'star':'star-outline'} size={36} color={myRating>=star?Colors.greenLight:'rgba(255,255,255,0.2)'} />
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={s.ratingHint}>Ta note améliore la réputation de l'organisateur ⚡</Text>
+        <Text style={s.ratingHint}>Ta note améliore la réputation de l'organisateur</Text>
       </>
     )}
   </View>
 )}
-          <Text style={s.sectionTitle}>👥 Joueurs ({matchPlayers.length})</Text>
+          <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}>
+            <Ionicons name="people" size={15} color={Colors.green} />
+            <Text style={s.sectionTitle}>Joueurs ({actualCurrentPlayers})</Text>
+          </View>
           {matchPlayers.map((p:any,i:number)=>(
             <TouchableOpacity key={p.user?.id??i} style={s.playerRow} activeOpacity={0.75}
-              onPress={() => { if (p.user?.id && p.user.id !== currentUser?.id) { setSelectedPlayer(p.user.id); setScreen('player_profile'); } }}
+              onPress={() => { if (p.user?.id && p.user.id !== currentUser?.id) { seedPlayerCache({ id: p.user.id, pseudo: p.user.pseudo ?? 'Joueur', reputation: p.user.reputation_score ?? 0, matchesPlayed: p.user.display_matches_played ?? 0 }); setSelectedPlayer(p.user.id); setScreen('player_profile'); } }}
               accessibilityRole="button" accessibilityLabel={`Voir le profil de ${p.user?.pseudo??'ce joueur'}`}>
               <View style={s.playerAvatar}><Text style={s.playerAvatarText}>{(p.user?.pseudo??'?')[0].toUpperCase()}</Text></View>
               <View style={{flex:1}}>
@@ -2090,9 +2666,49 @@ export default function App() {
                   <Text style={s.joinBtnText}>Rejoindre — S'inscrire gratuitement</Text>
                 </TouchableOpacity>
               : isOrganizer
-              ? <View style={s.orgaCTA}>
-                  <Ionicons name="shield-checkmark" size={18} color={Colors.green} />
-                  <Text style={s.orgaCTAText}>Tu organises ce match - {actualCurrentPlayers}/{selectedMatch.max_players} joueurs</Text>
+              ? <View style={{flex:1,flexDirection:'column',gap:10}}>
+                  <View style={[s.orgaCTA,{flex:undefined}]}>
+                    <Ionicons name="shield-checkmark" size={18} color={Colors.green} />
+                    <Text style={s.orgaCTAText}>Tu organises ce match · {actualCurrentPlayers}/{selectedMatch.max_players} joueurs</Text>
+                  </View>
+                  {matchPlayers.length <= 1 && (
+                    <View style={{flexDirection:'row',gap:10}}>
+                      <TouchableOpacity
+                        style={{flex:1,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:6,backgroundColor:'rgba(255,68,68,0.12)',borderRadius:50,paddingVertical:16,borderWidth:1,borderColor:'rgba(255,68,68,0.35)'}}
+                        onPress={handleDeleteMatch} disabled={loading} activeOpacity={0.85}
+                        accessibilityRole="button" accessibilityLabel="Supprimer ce match">
+                        <Ionicons name="trash-outline" size={16} color="#ff4444" />
+                        <Text style={{color:'#ff4444',fontWeight:'700',fontSize:15}}>Supprimer</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{flex:2,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:6,backgroundColor:Colors.green,borderRadius:50,paddingVertical:16}}
+                        onPress={() => {
+                          const d = new Date(selectedMatch.scheduled_at);
+                          setEditingMatch(selectedMatch);
+                          setForm({
+                            title: selectedMatch.title,
+                            type: selectedMatch.type,
+                            venueId: selectedMatch.venue_id ?? '',
+                            venueName: selectedMatch.venue?.name ?? selectedMatch.venue_name ?? '',
+                            venueAddress: selectedMatch.venue_address ?? '',
+                            venuePostal: selectedMatch.venue_postal ?? '',
+                            venueCity: selectedMatch.venue_city ?? '',
+                            date: formatFrenchDate(d),
+                            time: d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+                            maxPlayers: String(selectedMatch.max_players),
+                            price: String(selectedMatch.price_per_player || ''),
+                            description: selectedMatch.description ?? '',
+                            isPrivate: selectedMatch.is_private ?? false,
+                            isFree: (selectedMatch.price_per_player ?? 0) === 0,
+                          });
+                          setScreen('create');
+                        }}
+                        activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Modifier ce match">
+                        <Ionicons name="pencil" size={16} color="#000" />
+                        <Text style={{color:'#000',fontWeight:'900',fontSize:15}}>Modifier le match</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               : isJoined
               ? <View style={s.ctaRow}>
@@ -2106,13 +2722,15 @@ export default function App() {
                   </TouchableOpacity>
                 </View>
               : isFull
-              ? <View style={s.fullBtn}><Text style={s.fullBtnText}>🔴 Match complet</Text></View>
-              : <TouchableOpacity style={[s.joinBtn, loading&&s.btnDisabled]} onPress={handleJoin} disabled={loading} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Rejoindre ce match">
-                  <Text style={s.joinBtnText}>{loading ? 'Inscription en cours...' : '✅ Rejoindre — Gratuit'}</Text>
+              ? <View style={[s.fullBtn,{flexDirection:'row',alignItems:'center',gap:6}]}><Ionicons name="close-circle" size={16} color={Colors.textMuted} /><Text style={s.fullBtnText}>Match complet</Text></View>
+              : <TouchableOpacity style={[s.joinBtn, loading&&s.btnDisabled, {flexDirection:'row',alignItems:'center',gap:6}]} onPress={handleJoin} disabled={loading} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Rejoindre ce match">
+                  {!loading&&<Ionicons name="checkmark-circle" size={18} color="#000" />}
+                  <Text style={s.joinBtnText}>{loading ? 'Inscription en cours...' : 'Rejoindre — Gratuit'}</Text>
                 </TouchableOpacity>
             }
           </View>
         )}
+        <GuestModal visible={showGuestModal} onRegister={exitGuestMode} onLogin={()=>{setGuestMode(false);setShowGuestModal(false);setScreen('login');}} onClose={()=>setShowGuestModal(false)} />
       </View>
     );
   }
@@ -2240,18 +2858,20 @@ export default function App() {
 
         {/* ── Header ── */}
         <View style={cs.header}>
-          <TouchableOpacity style={cs.backBtn} onPress={()=>setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour">
+          <TouchableOpacity style={cs.backBtn} onPress={()=>{ setEditingMatch(null); setScreen(editingMatch ? 'detail' : 'home'); }} accessibilityRole="button" accessibilityLabel="Retour">
             <Ionicons name="chevron-back" size={20} color={Colors.green}/>
           </TouchableOpacity>
-          <Text style={cs.headerBadge}>Nouveau match</Text>
+          <View style={{flex:1,alignItems:'center'}}>
+            <Image source={require('./assets/logo footmatch transparent.png')} style={{width:220,height:100,marginBottom:-15}} resizeMode="contain"/>
+            {editingMatch && <Text style={{fontSize:10,color:Colors.textMuted,letterSpacing:1.5,textTransform:'uppercase',marginTop:-4}}>Modifier le match</Text>}
+          </View>
           <View style={{width:38}}/>
         </View>
 
         {/* ── Hero ── */}
         <View style={cs.hero}>
-          <Text style={cs.heroEyebrow}>FootMatch</Text>
-          <Text style={cs.heroTitle}>Organise ton{'\n'}<Text style={cs.heroGreen}>match ⚽</Text></Text>
-          <Text style={cs.heroSub}>Configure · Publie · Joue</Text>
+          <Text style={cs.heroTitle}>{editingMatch ? 'Modifie ton' : 'Organise ton'}{'\n'}<Text style={cs.heroGreen}>match ⚽</Text></Text>
+          <Text style={cs.heroSub}>{editingMatch ? 'Mets à jour · Enregistre' : 'Crée ton match en 30 secondes'}</Text>
         </View>
 
         <View style={cs.body}>
@@ -2324,19 +2944,18 @@ export default function App() {
             {/* Cartes calendrier + horloge */}
             <View style={{flexDirection:'row',gap:10,marginBottom:10}}>
               <TouchableOpacity style={[cs.dtCard,!!form.date&&cs.dtCardFilled]} onPress={()=>setShowDateModal(true)}>
-                <Text style={cs.dtTag}>📅  Date</Text>
+                <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="calendar-outline" size={13} color={Colors.textMuted} /><Text style={cs.dtTag}>Date</Text></View>
                 <Text style={[cs.dtVal,!form.date&&cs.dtValEmpty]}>{form.date?formatDateDisplay(form.date):'Sélectionner'}</Text>
                 <Text style={cs.dtChevron}>›</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[cs.dtCard,!!form.time&&cs.dtCardFilled]} onPress={()=>setShowTimeModal(true)}>
-                <Text style={cs.dtTag}>🕐  Heure</Text>
+                <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="time-outline" size={13} color={Colors.textMuted} /><Text style={cs.dtTag}>Heure</Text></View>
                 <Text style={[cs.dtVal,!form.time&&cs.dtValEmpty]}>{form.time||'Sélectionner'}</Text>
                 <Text style={cs.dtChevron}>›</Text>
               </TouchableOpacity>
             </View>
             {/* Saisie manuelle */}
             <View style={cs.inputBox}>
-              <Text style={cs.manualLabel}>JJ/MM/AAAA</Text>
               <TextInput style={cs.inputField} value={form.date} onChangeText={v=>{
                 let c=v.replace(/\D/g,'');
                 if(c.length>2) c=c.slice(0,2)+'/'+c.slice(2);
@@ -2345,7 +2964,6 @@ export default function App() {
               }} placeholder="03/05/2026" placeholderTextColor={Colors.textMuted} keyboardType="numeric" maxLength={10}/>
             </View>
             <View style={[cs.inputBox,{marginTop:10}]}>
-              <Text style={cs.manualLabel}>HH:MM</Text>
               <TextInput style={cs.inputField} value={form.time} onChangeText={v=>{
                 let c=v.replace(/\D/g,'');
                 if(c.length>2) c=c.slice(0,2)+':'+c.slice(2);
@@ -2361,12 +2979,60 @@ export default function App() {
               <Text style={cs.sectionLabel}>Terrain / Stade</Text>
             </View>
             <View style={cs.pitchMini}>
-              <Text style={cs.pitchMiniLabel}>📍  Localisation du match</Text>
-              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)'}]}>
-                <Ionicons name="location-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
+              <View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:8}}><Ionicons name="location-outline" size={13} color={Colors.textMuted} /><Text style={cs.pitchMiniLabel}>Localisation du match</Text></View>
+              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)',marginBottom:10}]}>
+                <Ionicons name="home-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
                 <TextInput style={cs.inputField} value={form.venueName} onChangeText={v=>setForm(f=>({...f,venueName:v}))}
-                  placeholder="Nom du complexe, stade, gymnase…" placeholderTextColor={Colors.textMuted}/>
+                  placeholder="Nom du complexe / terrain" placeholderTextColor={Colors.textMuted}/>
               </View>
+              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)',marginBottom:10}]}>
+                <Ionicons name="map-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
+                <TextInput style={cs.inputField} value={form.venueAddress} onChangeText={v=>setForm(f=>({...f,venueAddress:v}))}
+                  placeholder="Adresse du terrain" placeholderTextColor={Colors.textMuted}/>
+              </View>
+              {venueSearchOpen ? (
+                <View>
+                  {citySuggestions.length > 0 && (
+                    <View style={{backgroundColor:'#1a1a2e',borderRadius:8,borderWidth:1,borderColor:'rgba(0,255,135,0.25)',marginBottom:4,maxHeight:220}}>
+                      <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                        {citySuggestions.map((s,i)=>(
+                          <TouchableOpacity key={i}
+                            style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:12,borderBottomWidth:i<citySuggestions.length-1?1:0,borderBottomColor:'rgba(255,255,255,0.06)'}}
+                            onPress={()=>{ setForm(f=>({...f,venueCity:s.nom,venuePostal:s.codesPostaux[0]??f.venuePostal})); setCitySuggestions([]); setVenueSearchOpen(false); setVenueSearchText(''); }}>
+                            <Text style={{color:Colors.text,fontSize:14,fontWeight:'600'}}>{s.nom}</Text>
+                            <Text style={{color:Colors.textMuted,fontSize:12}}>{s.codesPostaux[0]}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                  <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:Colors.green}]}>
+                    <Ionicons name="search-outline" size={16} color={Colors.green} style={{marginRight:6}}/>
+                    <TextInput style={[cs.inputField,{flex:1}]} value={venueSearchText} onChangeText={onVenueSearchChange}
+                      placeholder="Code postal ou ville…" placeholderTextColor={Colors.textMuted} autoFocus keyboardType="default"/>
+                    <TouchableOpacity onPress={()=>{ setVenueSearchOpen(false); setCitySuggestions([]); }}>
+                      <Ionicons name="close-circle" size={18} color={Colors.textMuted}/>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (form.venuePostal || form.venueCity) ? (
+                <TouchableOpacity style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)'}]}
+                  onPress={()=>{ setVenueSearchText(form.venuePostal||form.venueCity); setVenueSearchOpen(true); }}>
+                  <Ionicons name="location-outline" size={16} color={Colors.green} style={{marginRight:8}}/>
+                  <View style={{flex:1}}>
+                    {form.venuePostal ? <Text style={{color:Colors.textMuted,fontSize:11}}>{form.venuePostal}</Text> : null}
+                    <Text style={{color:Colors.text,fontSize:14,fontWeight:'600'}}>{form.venueCity||form.venuePostal}</Text>
+                  </View>
+                  <Ionicons name="pencil-outline" size={14} color={Colors.textMuted}/>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)'}]}
+                  onPress={()=>{ setVenueSearchText(''); setVenueSearchOpen(true); }}>
+                  <Ionicons name="location-outline" size={16} color={Colors.textMuted} style={{marginRight:8}}/>
+                  <Text style={{color:Colors.textMuted,fontSize:14,flex:1}}>Code postal / Ville</Text>
+                  <Ionicons name="chevron-down-outline" size={14} color={Colors.textMuted}/>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -2452,12 +3118,12 @@ export default function App() {
           </View>
 
           {/* ── Submit ── */}
-          <TouchableOpacity style={[cs.submitBtn,loading&&{opacity:0.7}]} onPress={handleCreateMatch} disabled={loading}
-            accessibilityRole="button" accessibilityLabel="Publier le match">
-            <Ionicons name={loading?'time-outline':'play'} size={20} color="#000"/>
-            <Text style={cs.submitText}>{loading?'Publication…':'Publier le match'}</Text>
+          <TouchableOpacity style={[cs.submitBtn,loading&&{opacity:0.7}]} onPress={editingMatch ? handleUpdateMatch : handleCreateMatch} disabled={loading}
+            accessibilityRole="button" accessibilityLabel={editingMatch ? 'Enregistrer les modifications' : 'Publier le match'}>
+            <Ionicons name={loading?'time-outline': editingMatch ? 'checkmark-circle' : 'play'} size={20} color="#000"/>
+            <Text style={cs.submitText}>{loading ? (editingMatch ? 'Enregistrement…' : 'Publication…') : (editingMatch ? 'Enregistrer les modifications' : 'Publier le match')}</Text>
           </TouchableOpacity>
-          <Text style={cs.submitNote}>Tu rejoins automatiquement en tant qu'organisateur</Text>
+          {!editingMatch && <Text style={cs.submitNote}>Tu rejoins automatiquement en tant qu'organisateur</Text>}
           <View style={{height:60}}/>
         </View>
 
@@ -2466,7 +3132,7 @@ export default function App() {
           <TouchableOpacity style={cs.modalBack} activeOpacity={1} onPress={()=>setShowDateModal(false)}>
             <View style={cs.modalSheet} onStartShouldSetResponder={()=>true}>
               <View style={cs.modalHandle}/>
-              <Text style={cs.modalTitle}>📅  Choisir une date</Text>
+              <View style={{flexDirection:'row',alignItems:'center',gap:6}}><Ionicons name="calendar" size={18} color={Colors.green} /><Text style={cs.modalTitle}>Choisir une date</Text></View>
               <View style={cs.calNavRow}>
                 <TouchableOpacity style={cs.calNavBtn} onPress={()=>setCalMonth(m=>new Date(m.getFullYear(),m.getMonth()-1,1))}>
                   <Text style={cs.calNavBtnText}>‹</Text>
@@ -2506,7 +3172,7 @@ export default function App() {
           <TouchableOpacity style={cs.modalBack} activeOpacity={1} onPress={()=>setShowTimeModal(false)}>
             <View style={cs.modalSheet} onStartShouldSetResponder={()=>true}>
               <View style={cs.modalHandle}/>
-              <Text style={cs.modalTitle}>🕐  Choisir l'heure</Text>
+              <View style={{flexDirection:'row',alignItems:'center',gap:6}}><Ionicons name="time" size={18} color={Colors.green} /><Text style={cs.modalTitle}>Choisir l'heure</Text></View>
               <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
                 {(()=>{
                   const slots:string[]=[];
@@ -2537,14 +3203,14 @@ export default function App() {
         <View style={s.subHeader}>
           <TouchableOpacity style={s.backBtn} onPress={()=>setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour"><Ionicons name="chevron-back" size={22} color={Colors.green} /></TouchableOpacity>
           <View style={{alignItems:'center', flex:1}}>
-            <Text style={s.subHeaderTitle}>⚽ COMMUNAUTÉ</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:6}}><Ionicons name="football" size={16} color={Colors.text} /><Text style={s.subHeaderTitle}>COMMUNAUTÉ</Text></View>
             <Text style={{fontSize:11, color:Colors.textMuted, marginTop:2}}>Chat national FootMatch</Text>
           </View>
           <View style={{width:70}} />
         </View>
         {!currentUser ? (
           <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, gap:16}}>
-            <Text style={{fontSize:48}}>⚽</Text>
+            <Ionicons name="football-outline" size={48} color={Colors.textMuted} />
             <Text style={{fontSize:20, fontWeight:'900', color:Colors.text, textAlign:'center'}}>Rejoins la communauté</Text>
             <Text style={{fontSize:14, color:Colors.textMuted, textAlign:'center', lineHeight:22}}>Crée un compte gratuit pour accéder au chat communautaire et discuter avec tous les joueurs de France.</Text>
             <TouchableOpacity style={s.btn} onPress={()=>setScreen('register')} accessibilityRole="button" accessibilityLabel="S'inscrire gratuitement">
@@ -2561,7 +3227,7 @@ export default function App() {
               onContentSizeChange={()=>flatListRef.current?.scrollToEnd({animated:true})}
               ListHeaderComponent={
                 <View style={{alignItems:'center', marginBottom:16, gap:8}}>
-                  <Text style={{fontSize:36}}>⚽</Text>
+                  <Ionicons name="chatbubbles" size={36} color={Colors.green} />
                   <Text style={{fontSize:16, fontWeight:'900', color:Colors.text}}>Chat FootMatch France</Text>
                   <Text style={{fontSize:11, color:Colors.textMuted, textAlign:'center', lineHeight:17}}>{MODERATION_HINT}</Text>
                   <Text style={{fontSize:12, color:Colors.textMuted, textAlign:'center', lineHeight:18}}>Parle avec des joueurs du monde entier.{'\n'}Respect et fair-play obligatoires 🤝</Text>
@@ -2569,7 +3235,7 @@ export default function App() {
               }
               ListEmptyComponent={
                 <View style={s.chatEmpty}>
-                  <Text style={{fontSize:48}}>⚽</Text>
+                  <Ionicons name="football-outline" size={48} color={Colors.textMuted} />
                   <Text style={s.chatEmptyText}>Sois le premier à écrire !</Text>
                 </View>
               }
@@ -2577,7 +3243,7 @@ export default function App() {
                 const isMe = item.user_id===currentUser?.id;
                 return (
                   <View style={[s.msgWrap, isMe&&s.msgWrapMe]}>
-                    {!isMe&&<TouchableOpacity onPress={()=>{ setSelectedPlayer(item.user_id); setScreen('player_profile'); }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
+                    {!isMe&&<TouchableOpacity onPress={()=>{ seedPlayerCache({ id: item.user_id, pseudo: item.user?.pseudo ?? 'Joueur', reputation: item.user?.reputation_score ?? 0 }); setSelectedPlayer(item.user_id); setScreen('player_profile'); }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
                     <TouchableOpacity onLongPress={()=>handleMessageLongPressStoreReady(item, 'community')} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Message" accessibilityHint="Maintenez appuyé pour signaler">
                       <View style={[s.msgBubble, isMe&&s.msgBubbleMe]}>
                         <Text style={[s.msgText, isMe&&s.msgTextMe]}>{item.content}</Text>
@@ -2621,12 +3287,12 @@ export default function App() {
     const urgentMatches = upcoming.filter((m:any)=>m.max_players-m.current_players<=2 && m.max_players-m.current_players>0);
     const heroMatch: any = urgentMatches[0] ?? upcoming.sort((a:any,b:any)=>new Date(a.scheduled_at).getTime()-new Date(b.scheduled_at).getTime())[0];
     const FILTERS = [
-      {key:'all',    label:'Tous',       icon:'apps-outline'    as IoniconName },
-      {key:'five',   label:'⚡ Five',    icon:'flash-outline'   as IoniconName },
-      {key:'city',   label:'🏙️ City',   icon:'grid-outline'    as IoniconName },
-      {key:'eleven', label:'⚽ Foot 11', icon:'football-outline'as IoniconName },
-      {key:'mine',   label:'📌 Mes matchs',icon:'person-outline'  as IoniconName },
-      {key:'urgent', label:'🔥 Urgents', icon:'flash-outline'   as IoniconName },
+      {key:'all',    label:'Tous',       icon:'apps-outline'     as IoniconName },
+      {key:'five',   label:'Five',       icon:'flash-outline'    as IoniconName },
+      {key:'city',   label:'City',       icon:'business-outline' as IoniconName },
+      {key:'eleven', label:'Foot 11',    icon:'football-outline' as IoniconName },
+      {key:'mine',   label:'Mes matchs', icon:'person-outline'   as IoniconName },
+      {key:'urgent', label:'Urgents',    icon:'flame-outline'    as IoniconName },
     ] as {key:string;label:string;icon:IoniconName}[];
     return (
       <View style={s.container}>
@@ -2640,10 +3306,12 @@ export default function App() {
           </View>
         ):(
           <View style={s.homeHeader}>
-            <TouchableOpacity onPress={()=>{Alert.alert('💡 Suggestion / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Faire une suggestion ou devenir partenaire">
-              <Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>💡 Suggestion</Text>
+            <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
+              <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="mail-outline" size={11} color={Colors.textMuted} /><Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>Contact</Text></View>
             </TouchableOpacity>
-            <Image source={require('./assets/logo footmatch transparent.png')} style={s.homeLogo} resizeMode="contain" />
+            <Animated.View style={[s.homeLogoWrap, { opacity: homeLogoFade }]} pointerEvents="none">
+              <Image source={require('./assets/logo footmatch transparent.png')} style={s.homeLogo} resizeMode="contain" fadeDuration={0} />
+            </Animated.View>
             <TouchableOpacity style={s.searchBtn} onPress={()=>{setShowSearch(true);setTimeout(()=>searchRef.current?.focus(),100);}} accessibilityRole="button" accessibilityLabel="Rechercher un match">
               <Ionicons name="search-outline" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
@@ -2661,6 +3329,8 @@ export default function App() {
               <Text style={s.liveBarCount}>{liveStats.players.toLocaleString('fr-FR')}</Text> joueurs
               {'  ·  '}
               <Text style={s.liveBarCount}>{liveStats.matchesTonight}</Text> match{liveStats.matchesTonight>1?'s':''} ouverts
+              {'  ·  '}
+              <Text style={s.liveBarCount}>{liveStats.matchesCompleted}</Text> match{liveStats.matchesCompleted>1?'s':''} joués
             </Text>
           </View>
         )}
@@ -2676,8 +3346,8 @@ export default function App() {
 
         {/* ── ALERTE NOTATION ── */}
         {!showSearch&&toRateCount>0&&(
-          <View style={{alignItems:'center', marginBottom:8}}>
-            <TouchableOpacity style={s.rateAlert} onPress={()=>setScreen('profile')} accessibilityRole="button" accessibilityLabel={`${toRateCount} match${toRateCount>1?'s':''} à noter`}>
+          <View style={{alignItems:'center', marginTop:10, marginBottom:10}}>
+            <TouchableOpacity style={s.rateAlert} onPress={()=>{scrollToRatingsRef.current=true;setScreen('profile');}} accessibilityRole="button" accessibilityLabel={`${toRateCount} match${toRateCount>1?'s':''} à noter`}>
               <Ionicons name="star" size={13} color={Colors.yellow} />
               <Text style={s.rateAlertText}>{toRateCount} match{toRateCount>1?'s':''} à noter</Text>
               <Ionicons name="chevron-forward" size={13} color={Colors.yellow} />
@@ -2691,7 +3361,7 @@ export default function App() {
           {/* ── HERO CTA ROW ── */}
           {!showSearch&&(
             <View style={s.heroCtas}>
-              <TouchableOpacity style={s.heroFind} onPress={()=>setActiveFilter('all')} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Trouver un match près de moi">
+              <TouchableOpacity style={s.heroFind} onPress={()=>{setShowSearch(true);setTimeout(()=>searchRef.current?.focus(),100);}} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Trouver un match près de moi">
                 <Ionicons name="search" size={24} color={Colors.green} />
                 <Text style={s.heroCtaTitle}>Trouver</Text>
                 <Text style={s.heroCtaSub}>un match près de toi</Text>
@@ -2723,15 +3393,15 @@ export default function App() {
                 <View style={s.heroCardTop}>
                   <View style={{flexDirection:'row', gap:6, alignItems:'center'}}>
                     <View style={[s.heroTypeBadge,{backgroundColor:hCfg?.color+'22', borderColor:hCfg?.color+'60'}]}>
-                      <Text style={[s.heroTypeBadgeText,{color:hCfg?.color}]}>{hCfg?.emoji} {hCfg?.label}</Text>
+                      <Ionicons name={hCfg?.iconName as any} size={11} color={hCfg?.color} /><Text style={[s.heroTypeBadgeText,{color:hCfg?.color}]}>{hCfg?.label}</Text>
                     </View>
                     {hIsUrgent&&(
                       <Animated.View style={[s.urgentFlash, {transform:[{scale:pulseAnim}]}]}>
-                        <Text style={s.urgentFlashText}>🔥 URGENT</Text>
+                        <Text style={{fontSize:11}}>🔥</Text><Text style={s.urgentFlashText}>URGENT</Text>
                       </Animated.View>
                     )}
                     {isToday&&!hIsUrgent&&(
-                      <View style={s.todayBadge}><Text style={s.todayBadgeText}>⚡ CE SOIR</Text></View>
+                      <View style={s.todayBadge}><Ionicons name="flash" size={11} color={Colors.greenLight} /><Text style={s.todayBadgeText}>CE SOIR</Text></View>
                     )}
                   </View>
                   {hIsJoined&&<View style={s.joinedHeroBadge}><Text style={s.joinedHeroBadgeText}>✓ Inscrit</Text></View>}
@@ -2744,7 +3414,7 @@ export default function App() {
                 <View style={s.heroCardInfo}>
                   <View style={{flexDirection:'row', alignItems:'center', gap:5}}>
                     <Ionicons name="location-outline" size={13} color={Colors.textMuted} />
-                    <Text style={s.heroCardInfoText}>{heroMatch.venue?.name??'Terrain'}{hDist?` · ${hDist} km`:''}</Text>
+                    <Text style={s.heroCardInfoText}>{heroMatch.venue?.name ?? heroMatch.venue_name ?? 'Terrain'}{hDist?` · ${hDist} km`:''}</Text>
                   </View>
                   <View style={{flexDirection:'row', alignItems:'center', gap:5}}>
                     <Ionicons name="time-outline" size={13} color={Colors.textMuted} />
@@ -2757,7 +3427,7 @@ export default function App() {
                   <View style={{flex:1}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:5}}>
                       <Text style={s.heroPlayerCount}>{hCurrentPlayers} / {hMaxPlayers} joueurs</Text>
-                      {hIsUrgent&&<Text style={{fontSize:12, color:Colors.greenLight, fontWeight:'900'}}>⚡ {hSpotsLeft} place{hSpotsLeft>1?'s':''} restante{hSpotsLeft>1?'s':''} !</Text>}
+                      {hIsUrgent&&<View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="flash" size={12} color={Colors.greenLight} /><Text style={{fontSize:12, color:Colors.greenLight, fontWeight:'900'}}>{hSpotsLeft} place{hSpotsLeft>1?'s':''} restante{hSpotsLeft>1?'s':''} !</Text></View>}
                     </View>
                     <View style={s.heroBarBg}>
                       <View style={[s.heroBarFill, {width:`${Math.min(hPct*100,100)}%` as any, backgroundColor: hIsUrgent?Colors.greenLight:Colors.green}]} />
@@ -2783,6 +3453,7 @@ export default function App() {
                   const isActive=activeFilter===f.key;
                   return (
                     <TouchableOpacity key={f.key} style={[s.filterChip,isActive&&s.filterChipActive]} onPress={()=>setActiveFilter(f.key)} activeOpacity={0.7} accessibilityRole="tab" accessibilityLabel={f.label} accessibilityState={{ selected: isActive }}>
+                      <Ionicons name={f.icon} size={10} color={isActive?'#000':'rgba(255,255,255,0.4)'} />
                       <Text style={[s.filterChipLabel,isActive&&s.filterChipLabelActive]}>{f.label}</Text>
                     </TouchableOpacity>
                   );
@@ -2802,8 +3473,8 @@ export default function App() {
           {activeFilter==='urgent'&&!showSearch&&(
             <View style={s.urgentBanner}>
               <View style={{flex:1,gap:2}}>
-                <Text style={s.urgentBannerTitle}>🔥 Matchs presque complets</Text>
-                <Text style={s.urgentBannerSub}>Il manque peu de joueurs — rejoins vite !</Text>
+                <View style={{flexDirection:'row',alignItems:'center',gap:5}}><Ionicons name="flame" size={14} color="#FF4444" /><Text style={s.urgentBannerTitle}>Matchs presque complets</Text></View>
+                <Text style={s.urgentBannerSub}>Il reste peu de places sur ces matchs</Text>
               </View>
               <TouchableOpacity onPress={()=>setActiveFilter('all')} style={s.urgentBannerClose} accessibilityRole="button" accessibilityLabel="Voir tous les matchs">
                 <Ionicons name="close" size={16} color={Colors.textMuted} />
@@ -2846,19 +3517,19 @@ export default function App() {
             return (
               <TouchableOpacity key={m.id} style={[s.card, isUrgent&&s.cardUrgent, isPastMatch&&s.cardPast]} onPress={()=>loadMatchDetail(m)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`${m.title}${isUrgent?' — urgent, il reste peu de places':''}`}>
                 {/* Accent bar left */}
-                <View style={[s.cardAccent, {backgroundColor: isFull?Colors.bg3:isUrgent?Colors.greenLight:cfg?.color??Colors.green}]} />
+                <View style={[s.cardAccent, {backgroundColor: isFull?Colors.bg3:isUrgent?Colors.green:cfg?.color??Colors.green}]} />
 
                 <View style={s.cardContent}>
                   {/* Top row: type badge + status badges */}
                   <View style={s.cardTopRow2}>
                     <View style={[s.cardTypeBadge2, {backgroundColor:cfg?.color+'15', borderColor:cfg?.color+'40'}]}>
-                      <Text style={[s.cardTypeBadgeText2, {color:cfg?.color}]}>{cfg?.emoji} {cfg?.label}</Text>
+                      <Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.cardTypeBadgeText2, {color:cfg?.color}]}>{cfg?.label}</Text>
                     </View>
                     <View style={{flexDirection:'row', gap:5, alignItems:'center'}}>
                       {isJoined&&<View style={s.joinedBadge}><Text style={s.joinedBadgeText}>✓</Text></View>}
                       {isUrgent&&(
-                        <Animated.View style={[s.urgentBadge2, {transform:[{scale:pulseAnim}], opacity: pulseAnim}]}>
-                          <Text style={s.urgentBadge2Text}>URGENT - {spotsLeft} place{spotsLeft>1?'s':''}</Text>
+                        <Animated.View style={[s.urgentBadge2, {transform:[{scale:pulseAnim}]}]}>
+                          <Text style={s.urgentBadge2Text}>🔥 {spotsLeft} place{spotsLeft>1?'s':''}</Text>
                         </Animated.View>
                       )}
                       {isTodayMatch&&!isPastMatch&&!isUrgent&&<View style={s.tonightBadge}><Text style={s.tonightBadgeText}>CE SOIR</Text></View>}
@@ -2873,7 +3544,7 @@ export default function App() {
                   <View style={{flexDirection:'row', alignItems:'center', gap:12, marginBottom:10}}>
                     <View style={{flexDirection:'row', alignItems:'center', gap:4}}>
                       <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-                      <Text style={s.cardInfoText2}>{m.venue?.name??'Terrain'}{dist?` · ${dist}km`:''}</Text>
+                      <Text style={s.cardInfoText2}>{m.venue?.name ?? m.venue_name ?? 'Terrain'}{m.venue_postal?` · ${m.venue_postal}`:''}{dist?` · ${dist}km`:''}</Text>
                     </View>
                     <View style={{flexDirection:'row', alignItems:'center', gap:4}}>
                       <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
@@ -2885,7 +3556,7 @@ export default function App() {
                   <View style={{flexDirection:'row', alignItems:'center', gap:10}}>
                     <View style={{flex:1}}>
                       <View style={s.cardBarWrap2}>
-                        <View style={[s.cardBarFill2, {width:`${Math.min(pct*100,100)}%` as any, backgroundColor:isFull?Colors.bg3:isUrgent?Colors.greenLight:Colors.green}]} />
+                        <View style={[s.cardBarFill2, {width:`${Math.min(pct*100,100)}%` as any, backgroundColor:isFull?Colors.bg3:Colors.green}]} />
                       </View>
                       <Text style={s.cardPlayersLabel2}>{m.current_players}/{m.max_players} joueurs</Text>
                     </View>
@@ -2904,7 +3575,7 @@ export default function App() {
           <View style={{height:130}} />
         </ScrollView>
 
-        <BottomNav active={screen} onNavigate={(s)=>{if(guestMode&&s==='profile'){setShowGuestModal(true);}else{setScreen(s as any);}}} toRateCount={toRateCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
+        <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
         <GuestModal visible={showGuestModal} onRegister={()=>exitGuestMode()} onLogin={()=>{setGuestMode(false);setShowGuestModal(false);setScreen('login');}} onClose={()=>setShowGuestModal(false)} />
       </View>
     );
@@ -2929,6 +3600,71 @@ export default function App() {
         {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Pseudo</Text><TextInput style={s.input} value={pseudo} onChangeText={setPseudo} placeholder="TonPseudo" placeholderTextColor={Colors.textMuted} /></View>}
         {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Ville</Text><TextInput style={s.input} value={registerCity} onChangeText={setRegisterCity} placeholder="Paris" placeholderTextColor={Colors.textMuted} /></View>}
         {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Code postal</Text><TextInput style={s.input} value={registerPostalCode} onChangeText={setRegisterPostalCode} placeholder="75011" placeholderTextColor={Colors.textMuted} keyboardType="number-pad" maxLength={5} /></View>}
+
+        {/* ── DISPONIBILITÉS (optionnel) ── */}
+        {screen==='register'&&(
+          <View style={s.dispoBlock}>
+            <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:6}}>
+              <Ionicons name="calendar-outline" size={15} color={Colors.green} />
+              <Text style={s.fieldLabel}>Mes disponibilités habituelles</Text>
+            </View>
+            <Text style={{fontSize:11, color:Colors.textMuted, marginBottom:10}}>Tu pourras modifier ça plus tard · Optionnel</Text>
+            {/* Jours */}
+            <View style={{flexDirection:'row', flexWrap:'wrap', gap:7, marginBottom:10}}>
+              {['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(jour=>{
+                const isSelected = registerDisponibilites.some(d=>d.jour===jour);
+                return (
+                  <TouchableOpacity
+                    key={jour}
+                    style={[s.dispoJourBtn, isSelected && s.dispoJourBtnActive]}
+                    onPress={()=>{
+                      if(isSelected){
+                        setRegisterDisponibilites(prev=>prev.filter(d=>d.jour!==jour));
+                      } else {
+                        setRegisterDisponibilites(prev=>[...prev,{jour, debut:'18:00', fin:'20:00'}]);
+                      }
+                    }}
+                    activeOpacity={0.75}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={jour}
+                    accessibilityState={{checked: isSelected}}
+                  >
+                    <Text style={[s.dispoJourText, isSelected && s.dispoJourTextActive]}>{jour}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {/* Créneaux pour les jours sélectionnés */}
+            {registerDisponibilites.map(d=>(
+              <View key={d.jour} style={s.dispoCreneauRow}>
+                <Text style={s.dispoCrenJour}>{d.jour}</Text>
+                <View style={{flex:1, flexDirection:'row', alignItems:'center', gap:6}}>
+                  <Text style={s.dispoCrenLabel}>Début</Text>
+                  <TextInput
+                    style={s.dispoCrenInput}
+                    value={d.debut}
+                    onChangeText={v=>setRegisterDisponibilites(prev=>prev.map(x=>x.jour===d.jour?{...x,debut:v}:x))}
+                    placeholder="17:00"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                  />
+                  <Text style={s.dispoCrenLabel}>Fin</Text>
+                  <TextInput
+                    style={s.dispoCrenInput}
+                    value={d.fin}
+                    onChangeText={v=>setRegisterDisponibilites(prev=>prev.map(x=>x.jour===d.jour?{...x,fin:v}:x))}
+                    placeholder="19:00"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         <View style={s.field}><Text style={s.fieldLabel}>Email</Text><TextInput style={s.input} value={email} onChangeText={setEmail} placeholder="ton@email.com" placeholderTextColor={Colors.textMuted} keyboardType="email-address" autoCapitalize="none" /></View>
         <View style={s.field}><Text style={s.fieldLabel}>Mot de passe</Text><TextInput style={s.input} value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={Colors.textMuted} secureTextEntry /></View>
         {screen==='register'&&(
@@ -2953,7 +3689,8 @@ export default function App() {
           <Text style={s.switchText}>{screen==='login'?"Pas de compte ? S'inscrire":'Déjà un compte ? Se connecter'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.legalFooterBtn} onPress={()=>setScreen('legal')} accessibilityRole="button" accessibilityLabel="Voir la politique de confidentialité et les CGU">
-          <Text style={s.legalFooterText}>📄 Politique de confidentialité & CGU</Text>
+          <Ionicons name="document-text-outline" size={14} color={Colors.textMuted} />
+          <Text style={s.legalFooterText}>Politique de confidentialité & CGU</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.guestBtn} onPress={()=>enterGuestMode()} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel="Continuer en mode invité sans créer de compte">
           <Ionicons name="eye-outline" size={15} color={Colors.textMuted} />
@@ -2961,10 +3698,17 @@ export default function App() {
         </TouchableOpacity>
       </View>
       <View style={s.authFeatures}>
-        <Text style={s.authFeature}>⚡ Trouve un match en 30 secondes</Text>
-        <Text style={s.authFeature}>💬 Chat avec les joueurs</Text>
-        <Text style={s.authFeature}>📍 Matchs près de chez toi</Text>
-        <Text style={s.authFeature}>⭐ Système de notation fair-play</Text>
+        {[
+          { icon:'flash' as IoniconName,      label:'Trouve un match en 30 secondes' },
+          { icon:'chatbubbles' as IoniconName, label:'Chat avec les joueurs'          },
+          { icon:'location' as IoniconName,    label:'Matchs près de chez toi'        },
+          { icon:'star' as IoniconName,        label:'Système de notation fair-play'  },
+        ].map(f=>(
+          <View key={f.label} style={{flexDirection:'row',alignItems:'center',gap:8,marginBottom:4}}>
+            <Ionicons name={f.icon} size={15} color={Colors.green} />
+            <Text style={s.authFeature}>{f.label}</Text>
+          </View>
+        ))}
       </View>
     </ScrollView>
   );
@@ -2992,7 +3736,8 @@ const s = StyleSheet.create({
   inviteItemSpotsText:{ fontSize:11, fontWeight:'700', color:Colors.green },
 
   homeHeader:        { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:Spacing.xl, paddingTop:Platform.OS==='ios'?56:40, paddingBottom:12 },
-  homeLogo:          { width:220, height:100, position:'absolute', left:0, right:0, alignSelf:'center' },
+  homeLogoWrap:      { position:'absolute', left:0, right:0, top:Platform.OS==='ios'?56:40, bottom:12, alignItems:'center', justifyContent:'center' },
+  homeLogo:          { width:220, height:100 },
   homeGreet:         { fontSize:13, color:Colors.textMuted, marginTop:2 },
 
   // Hero CTAs
@@ -3006,7 +3751,7 @@ const s = StyleSheet.create({
   urgentPill:        { flexDirection:'row', alignItems:'center', gap:6, marginHorizontal:Spacing.xl, marginBottom:12, backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingHorizontal:14, paddingVertical:8, alignSelf:'flex-start', borderWidth:1, borderColor:Colors.greenBorder },
 
   // Live stats bar
-  liveBar:           { flexDirection:'row', alignItems:'center', gap:8, paddingHorizontal:Spacing.xl, paddingVertical:8, backgroundColor:'rgba(0,230,118,0.04)', borderBottomWidth:1, borderBottomColor:'rgba(0,230,118,0.08)' },
+  liveBar:           { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingHorizontal:Spacing.xl, paddingVertical:8, backgroundColor:'rgba(0,230,118,0.04)', borderBottomWidth:1, borderBottomColor:'rgba(0,230,118,0.08)' },
   liveDotWrap:       { width:14, height:14, alignItems:'center', justifyContent:'center' },
   liveDot:           { width:7, height:7, borderRadius:4, backgroundColor:Colors.green, position:'absolute' },
   liveDotPulse:      { width:14, height:14, borderRadius:7, backgroundColor:'rgba(0,230,118,0.25)', position:'absolute' },
@@ -3016,15 +3761,15 @@ const s = StyleSheet.create({
   // Hero match card
   heroCard:          { marginHorizontal:Spacing.xl, marginBottom:16, marginTop:8, backgroundColor:Colors.bg2, borderRadius:Radius.xl, padding:Spacing.lg, borderWidth:1.5, borderColor:'rgba(0,230,118,0.20)', overflow:'hidden' },
   heroCardTop:       { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:10 },
-  heroTypeBadge:     { borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1 },
+  heroTypeBadge:     { borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1, flexDirection:'row', alignItems:'center', gap:4 },
   heroTypeBadgeText: { fontSize:12, fontWeight:'700' },
-  urgentFlash:       { backgroundColor:'rgba(0,230,118,0.15)', borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1, borderColor:'rgba(0,230,118,0.4)' },
-  urgentFlashText:   { fontSize:11, fontWeight:'900', color:Colors.green },
-  urgentBanner:      { flexDirection:'row', alignItems:'center', marginHorizontal:Spacing.xl, marginBottom:8, marginTop:4, backgroundColor:'rgba(0,230,118,0.08)', borderRadius:12, borderWidth:1, borderColor:'rgba(0,230,118,0.25)', paddingHorizontal:14, paddingVertical:10 },
-  urgentBannerTitle: { fontSize:14, fontWeight:'800', color:Colors.green },
+  urgentFlash:       { backgroundColor:'rgba(0,230,118,0.12)', borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1, borderColor:'rgba(0,230,118,0.35)', flexDirection:'row', alignItems:'center', gap:4 },
+  urgentFlashText:   { fontSize:11, fontWeight:'800', color:Colors.green, letterSpacing:0.4 },
+  urgentBanner:      { flexDirection:'row', alignItems:'center', marginHorizontal:Spacing.xl, marginBottom:8, marginTop:4, backgroundColor:'rgba(0,230,118,0.06)', borderRadius:12, borderWidth:1, borderColor:'rgba(0,230,118,0.18)', paddingHorizontal:14, paddingVertical:10 },
+  urgentBannerTitle: { fontSize:14, fontWeight:'700', color:Colors.text },
   urgentBannerSub:   { fontSize:12, color:Colors.textMuted },
   urgentBannerClose: { padding:4 },
-  todayBadge:        { backgroundColor:'rgba(0,230,118,0.10)', borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1, borderColor:'rgba(0,230,118,0.25)' },
+  todayBadge:        { backgroundColor:'rgba(0,230,118,0.10)', borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1, borderColor:'rgba(0,230,118,0.25)', flexDirection:'row', alignItems:'center', gap:4 },
   todayBadgeText:    { fontSize:11, fontWeight:'800', color:Colors.greenLight },
   joinedHeroBadge:   { backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:3, borderWidth:1, borderColor:Colors.green+'40' },
   joinedHeroBadgeText: { fontSize:11, fontWeight:'700', color:Colors.green },
@@ -3041,10 +3786,10 @@ const s = StyleSheet.create({
   // Premium match cards
   cardAccent:        { width:4, borderRadius:4, alignSelf:'stretch', marginRight:12 },
   cardTopRow2:       { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8 },
-  cardTypeBadge2:    { borderRadius:Radius.full, paddingHorizontal:9, paddingVertical:3, borderWidth:1 },
+  cardTypeBadge2:    { borderRadius:Radius.full, paddingHorizontal:9, paddingVertical:3, borderWidth:1, flexDirection:'row', alignItems:'center', gap:4 },
   cardTypeBadgeText2:{ fontSize:11, fontWeight:'700' },
-  urgentBadge2:      { backgroundColor:'rgba(0,230,118,0.22)', borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1.5, borderColor:'rgba(0,230,118,0.85)', shadowColor:Colors.green, shadowOpacity:0.4, shadowRadius:10, elevation:5 },
-  urgentBadge2Text:  { fontSize:11, fontWeight:'900', color:Colors.greenLight, letterSpacing:0.3 },
+  urgentBadge2:      { backgroundColor:'rgba(0,230,118,0.14)', borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:4, borderWidth:1.5, borderColor:'rgba(0,230,118,0.55)', shadowColor:Colors.green, shadowOpacity:0.25, shadowRadius:8, elevation:4 },
+  urgentBadge2Text:  { fontSize:11, fontWeight:'800', color:Colors.greenLight, letterSpacing:0.3 },
   tonightBadge:      { backgroundColor:'rgba(0,230,118,0.08)', borderRadius:Radius.full, paddingHorizontal:7, paddingVertical:2 },
   tonightBadgeText:  { fontSize:9, fontWeight:'800', color:Colors.greenLight, letterSpacing:0.5 },
   cardInfoText2:     { fontSize:11, color:Colors.textMuted, fontWeight:'500' },
@@ -3105,8 +3850,8 @@ const s = StyleSheet.create({
   shareDetailBtnText:{ fontSize:12, fontWeight:'800', color:'#000' },
   shareNudge:        { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingHorizontal:16, paddingVertical:10, marginBottom:12, borderWidth:1, borderColor:Colors.greenBorder, justifyContent:'center' },
   shareNudgeText:    { fontSize:13, fontWeight:'700', color:Colors.green, flex:1, textAlign:'center' },
-  shareProfileBtn:   { flexDirection:'row', alignItems:'center', gap:8, marginHorizontal:Spacing.xl, marginBottom:Spacing.lg, backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingVertical:12, paddingHorizontal:20, justifyContent:'center', borderWidth:1, borderColor:Colors.greenBorder },
-  shareProfileBtnText: { fontSize:14, fontWeight:'700', color:Colors.green },
+  shareProfileBtn:   { flexDirection:'row', alignItems:'center', gap:10, marginHorizontal:Spacing.xl, marginBottom:Spacing.lg, backgroundColor:'rgba(255,255,255,0.08)', borderRadius:Radius.full, paddingVertical:14, paddingHorizontal:24, justifyContent:'center', borderWidth:1.5, borderColor:'rgba(255,255,255,0.20)', shadowColor:'#fff', shadowOpacity:0.05, shadowRadius:8 },
+  shareProfileBtnText: { fontSize:15, fontWeight:'800', color:Colors.text },
 
   searchHeader:      { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.xl, paddingTop:56, paddingBottom:14, borderBottomWidth:1, borderBottomColor:Colors.border, gap:12 },
   searchInput:       { flex:1, backgroundColor:Colors.bg3, borderRadius:Radius.full, paddingHorizontal:16, paddingVertical:12, color:Colors.text, fontSize:15, borderWidth:1, borderColor:'rgba(255,255,255,0.12)' },
@@ -3136,7 +3881,7 @@ const s = StyleSheet.create({
   card:              { backgroundColor:Colors.card, borderRadius:Radius.lg, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', marginBottom:14, overflow:'hidden', flexDirection:'row', padding:0 },
   cardFull:          { opacity:0.7 },
   cardPast:          { opacity:0.5 },
-  cardUrgent:        { borderColor:'rgba(0,230,118,0.65)', shadowColor:Colors.green, shadowOpacity:0.22, shadowRadius:14, elevation:6 },
+  cardUrgent:        { borderColor:'rgba(0,230,118,0.30)' },
   cardContent:       { flex:1, padding:Spacing.lg, gap:6 },
   cardTypeBadge:     { backgroundColor:Colors.greenDark+'25', borderRadius:Radius.full, paddingHorizontal:14, paddingVertical:5, borderWidth:1, borderColor:Colors.greenDark+'50' },
   cardTypeBadgeText: { fontSize:12, fontWeight:'800', color:Colors.greenDark, textTransform:'uppercase', letterSpacing:0.5 },
@@ -3147,7 +3892,7 @@ const s = StyleSheet.create({
   cardTop:           { flexDirection:'row', justifyContent:'space-between', padding:Spacing.lg, backgroundColor:Colors.bg3, gap:12 },
   cardLeft:          { flex:1 },
   cardBadgeRow:      { flexDirection:'row', gap:6, marginBottom:8, flexWrap:'wrap' },
-  badge:             { alignSelf:'flex-start', paddingHorizontal:9, paddingVertical:3, borderRadius:Radius.full, borderWidth:1 },
+  badge:             { alignSelf:'flex-start', paddingHorizontal:9, paddingVertical:3, borderRadius:Radius.full, borderWidth:1, flexDirection:'row', alignItems:'center', gap:4 },
   badgeText:         { fontSize:11, fontWeight:'700', textTransform:'uppercase' },
   joinedBadge:       { paddingHorizontal:9, paddingVertical:3, borderRadius:Radius.full, borderWidth:1, borderColor:Colors.greenBorder, backgroundColor:Colors.greenDim },
   joinedBadgeText:   { fontSize:11, fontWeight:'700', color:Colors.green },
@@ -3183,7 +3928,7 @@ const s = StyleSheet.create({
   fabEmoji:          { fontSize:28 },
 
   // ── Create match form ─────────────────────────────────────────────────────
-  createHeader:      { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.xl, paddingTop:Platform.OS==='ios'?56:40, paddingBottom:Spacing.lg },
+  createHeader:      { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.xl, paddingTop:Platform.OS==='ios'?56:40, paddingBottom:0 },
   createBackBtn:     { width:40, height:40, alignItems:'center', justifyContent:'center' },
   createHeaderCenter:{ flex:1, alignItems:'center' },
   createHeroTitle:   { fontSize:24, fontWeight:'900', color:Colors.text, textAlign:'center', letterSpacing:-0.3 },
@@ -3269,6 +4014,7 @@ const s = StyleSheet.create({
   avgRatingText:     { fontSize:13, color:Colors.textMuted },
   detailStats:       { flexDirection:'row', backgroundColor:Colors.bg3, borderRadius:Radius.lg, padding:Spacing.lg, borderWidth:1, borderColor:Colors.borderSubtle, marginBottom:12 },
   detailStat:        { flex:1, alignItems:'center' },
+  detailStatPrimary: { height:28, justifyContent:'center', alignItems:'center' },
   detailStatN:       { fontSize:22, fontWeight:'900', color:Colors.green },
   detailStatL:       { fontSize:11, color:Colors.textMuted, textAlign:'center', marginTop:2 },
   heroStatDiv:       { width:1, height:36, backgroundColor:Colors.border },
@@ -3280,7 +4026,7 @@ const s = StyleSheet.create({
   infoLabel:         { fontSize:11, color:Colors.textMuted, textTransform:'uppercase', letterSpacing:0.8, marginBottom:2 },
   infoValue:         { fontSize:14, color:Colors.text, fontWeight:'600' },
   infoSub:           { fontSize:12, color:Colors.textMuted, marginTop:1 },
-  chatBtn:           { backgroundColor:Colors.green, borderRadius:Radius.full, paddingVertical:14, paddingHorizontal:28, alignItems:'center', alignSelf:'center', marginBottom:16 },
+  chatBtn:           { backgroundColor:Colors.green, borderRadius:Radius.full, paddingVertical:14, paddingHorizontal:28, alignItems:'center', alignSelf:'center', marginBottom:16, flexDirection:'row', gap:8 },
   chatBtnText:       { color:'#000', fontWeight:'900', fontSize:15 },
   ratingBox:         { backgroundColor:Colors.bg2, borderRadius:Radius.lg, padding:Spacing.xl, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', marginBottom:Spacing.lg },
   ratingBoxDone:     { borderColor:Colors.green+'40', backgroundColor:Colors.greenDim },
@@ -3292,7 +4038,7 @@ const s = StyleSheet.create({
   starActive:        { color:Colors.greenLight },
   ratingDone:        { fontSize:13, color:Colors.green, fontWeight:'600' },
   ratingHint:        { fontSize:12, color:Colors.textMuted },
-  sectionTitle:      { fontSize:15, fontWeight:'700', color:Colors.text, textTransform:'uppercase', marginBottom:12 },
+  sectionTitle:      { fontSize:15, fontWeight:'700', color:Colors.text, textTransform:'uppercase' },
   playerRow:         { flexDirection:'row', alignItems:'center', gap:12, paddingVertical:12, borderBottomWidth:1, borderBottomColor:Colors.borderSubtle },
   playerAvatar:      { width:44, height:44, borderRadius:22, backgroundColor:Colors.bg3, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', alignItems:'center', justifyContent:'center' },
   playerAvatarText:  { fontSize:18, fontWeight:'900', color:Colors.green },
@@ -3335,22 +4081,25 @@ const s = StyleSheet.create({
   cardFUTBtnSub:     { fontSize:11, color:Colors.textMuted, marginTop:2 },
   cardFUTBtnArrow:   { fontSize:18, color:'#FBBF24', fontWeight:'700' },
 
-  streakBanner:      { flexDirection:'row', alignItems:'center', gap:12, marginHorizontal:Spacing.xl, marginBottom:Spacing.lg, backgroundColor:'rgba(0,230,118,0.07)', borderRadius:Radius.lg, padding:Spacing.lg, borderWidth:1, borderColor:'rgba(0,230,118,0.20)' },
-  streakFire:        { fontSize:32 },
-  streakTitle:       { fontSize:15, fontWeight:'900', color:Colors.green },
-  streakSub:         { fontSize:11, color:Colors.textMuted, marginTop:2 },
-  streakCount:       { marginLeft:'auto', fontSize:36, fontWeight:'900', color:'rgba(0,230,118,0.25)' },
+  // Bouton Compétitions teaser (page Communauté)
+  competitionsTeaser:         { flexDirection:'row', alignItems:'center', gap:14, marginHorizontal:Spacing.xl, marginTop:8, marginBottom:4, backgroundColor:'rgba(255,255,255,0.03)', borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.06)', padding:14 },
+  competitionsTeaserIcon:     { width:42, height:42, borderRadius:21, backgroundColor:'rgba(255,255,255,0.07)', alignItems:'center', justifyContent:'center' },
+  competitionsTeaserTitle:    { fontSize:14, fontWeight:'700', color:Colors.textMuted },
+  competitionsTeaserSub:      { fontSize:12, color:Colors.textDim, marginTop:2 },
+  competitionsTeaserBadge:    { paddingHorizontal:10, paddingVertical:4, borderRadius:10, backgroundColor:'rgba(255,255,255,0.07)', borderWidth:1, borderColor:'rgba(255,255,255,0.1)' },
+  competitionsTeaserBadgeText:{ fontSize:11, fontWeight:'700', color:Colors.textMuted, letterSpacing:0.5 },
+
   statsGrid:         { flexDirection:'row', flexWrap:'wrap', padding:Spacing.xl, gap:10 },
-  statCard:          { width:'47%', backgroundColor:Colors.bg3, borderRadius:Radius.lg, padding:14, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', alignItems:'center' },
+  statCard:          { width:'47%', backgroundColor:'rgba(255,255,255,0.05)', borderRadius:Radius.lg, padding:14, borderWidth:1, borderColor:'rgba(255,255,255,0.10)', alignItems:'center' },
   statCardN:         { fontSize:32, fontWeight:'900', color:Colors.green },
   statCardL:         { fontSize:11, color:Colors.textMuted, textTransform:'uppercase', textAlign:'center', marginTop:3 },
-  advancedStats:     { marginHorizontal:Spacing.xl, backgroundColor:Colors.card, borderRadius:Radius.lg, padding:Spacing.xl, borderWidth:1, borderColor:Colors.borderSubtle, marginBottom:Spacing.xl },
-  advancedStatsTitle:{ fontSize:16, fontWeight:'900', color:Colors.text, textTransform:'uppercase', marginBottom:16 },
+  advancedStats:     { marginHorizontal:Spacing.xl, backgroundColor:'rgba(255,255,255,0.04)', borderRadius:Radius.lg, padding:Spacing.xl, borderWidth:1, borderColor:'rgba(255,255,255,0.10)', marginBottom:Spacing.xl },
+  advancedStatsTitle:{ fontSize:16, fontWeight:'900', color:Colors.text, textTransform:'uppercase' },
   statRow:           { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:10, borderBottomWidth:1, borderBottomColor:Colors.borderSubtle },
   statRowLabel:      { fontSize:13, color:Colors.textMuted },
   statRowValue:      { fontSize:14, fontWeight:'700', color:Colors.text },
   levelProgress:     { marginTop:16 },
-  levelProgressTitle:{ fontSize:14, fontWeight:'700', color:Colors.text, marginBottom:12 },
+  levelProgressTitle:{ fontSize:14, fontWeight:'700', color:Colors.text },
   levelSteps:        { flexDirection:'row', justifyContent:'space-between', marginBottom:8 },
   levelStep:         { alignItems:'center', gap:4, flex:1 },
   levelDot:          { width:12, height:12, borderRadius:6, backgroundColor:Colors.bg3, borderWidth:2, borderColor:Colors.border },
@@ -3386,6 +4135,8 @@ const s = StyleSheet.create({
   msgSender:         { fontSize:11, color:Colors.textMuted, fontWeight:'700', textTransform:'uppercase', marginBottom:3 },
   msgBubble:         { backgroundColor:Colors.bg3, borderRadius:12, borderTopLeftRadius:2, paddingHorizontal:13, paddingVertical:9, borderWidth:1, borderColor:Colors.borderSubtle },
   msgBubbleMe:       { backgroundColor:Colors.greenDim, borderColor:Colors.greenBorder, borderTopLeftRadius:12, borderTopRightRadius:2 },
+  msgBubbleAddr:     { backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.greenBorder },
+  msgTextAddr:       { color:Colors.green, fontWeight:'600' },
   msgText:           { fontSize:14, color:Colors.text, lineHeight:20 },
   msgTextMe:         { color:Colors.text },
   msgTime:           { fontSize:10, color:Colors.textMuted, marginTop:3 },
@@ -3444,6 +4195,17 @@ const s = StyleSheet.create({
   mapCardBtnText:    { fontSize:13, fontWeight:'800', color:'#fff' },
 
   // Consentement inscription
+  // Disponibilités form
+  dispoBlock:        { backgroundColor:'rgba(255,255,255,0.04)', borderRadius:Radius.md, padding:Spacing.md, borderWidth:1, borderColor:'rgba(255,255,255,0.10)', marginBottom:Spacing.md },
+  dispoJourBtn:      { paddingHorizontal:10, paddingVertical:6, borderRadius:Radius.full, backgroundColor:Colors.bg3, borderWidth:1, borderColor:'rgba(255,255,255,0.10)' },
+  dispoJourBtnActive:{ backgroundColor:Colors.greenDim, borderColor:Colors.greenBorder },
+  dispoJourText:     { fontSize:12, fontWeight:'700', color:Colors.textMuted },
+  dispoJourTextActive:{ color:Colors.green },
+  dispoCreneauRow:   { flexDirection:'row', alignItems:'center', gap:8, marginBottom:8 },
+  dispoCrenJour:     { fontSize:13, fontWeight:'800', color:Colors.green, width:32 },
+  dispoCrenLabel:    { fontSize:11, color:Colors.textMuted, fontWeight:'600' },
+  dispoCrenInput:    { flex:1, backgroundColor:Colors.bg3, borderRadius:Radius.sm, paddingHorizontal:10, paddingVertical:6, color:Colors.text, fontSize:13, borderWidth:1, borderColor:Colors.border },
+
   consentRow:        { flexDirection:'row', alignItems:'flex-start', gap:10, marginBottom:Spacing.lg },
   checkbox:          { width:20, height:20, borderWidth:2, borderColor:'rgba(255,255,255,0.25)', borderRadius:4, alignItems:'center', justifyContent:'center', marginTop:2, flexShrink:0 },
   checkboxChecked:   { borderColor:Colors.green, backgroundColor:Colors.greenDim },
@@ -3459,23 +4221,21 @@ const s = StyleSheet.create({
   guestBannerSep:    { width:1, height:12, backgroundColor:'rgba(0,230,118,0.10)' },
   guestBannerCta:    { fontSize:12, color:Colors.greenLight, fontWeight:'600', flex:1, textAlign:'right' },
 
-  // Profil – zone légale et suppression
-  dangerZone:        { paddingHorizontal:Spacing.xl, marginBottom:Spacing.xl, gap:12 },
-  legalProfileBtn:   { backgroundColor:Colors.bg2, borderRadius:Radius.md, padding:14, alignItems:'center', borderWidth:1, borderColor:Colors.borderSubtle },
-  legalProfileBtnText:{ color:Colors.textMuted, fontSize:13, fontWeight:'600' },
-  deleteAccountBtn:  { backgroundColor:'rgba(0,230,118,0.12)', borderRadius:Radius.md, padding:14, alignItems:'center', borderWidth:1, borderColor:'rgba(0,230,118,0.12)' },
-  deleteAccountBtnText:{ color:Colors.greenDark, fontSize:13, fontWeight:'600' },
+  // Chat screen header
+  chatHeader:        { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.xl, paddingTop:Platform.OS==='ios'?56:44, paddingBottom:14, borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.06)', gap:10 },
+  chatHeaderCenter:  { flex:1, alignItems:'center' },
+  chatHeaderTitle:   { fontSize:15, fontWeight:'800', color:Colors.text, textAlign:'center' },
+  chatHeaderSub:     { fontSize:11, color:Colors.textMuted, marginTop:1 },
+  chatShareAddrBtn:  { width:36, height:36, borderRadius:18, backgroundColor:Colors.bg2, borderWidth:1, borderColor:Colors.border, alignItems:'center', justifyContent:'center' },
 
-  chatHeader:        { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.lg, paddingTop:Platform.OS==='ios'?56:44, paddingBottom:12, borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.06)', gap:10 },
-  chatHeaderCenter:  { flex:1 },
-  chatHeaderTitle:   { fontSize:15, fontWeight:'800', color:Colors.text },
-  chatHeaderSub:     { fontSize:11, color:Colors.textMuted, marginTop:2 },
-  chatShareAddrBtn:  { padding:6 },
-  msgBubbleAddr:     { backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.greenBorder },
-  msgTextAddr:       { color:Colors.green, fontWeight:'600' },
+  // Profil — Danger zone
+  dangerZone:         { gap:10, marginHorizontal:Spacing.xl, marginTop:Spacing.xl, paddingTop:Spacing.xl, borderTopWidth:1, borderTopColor:'rgba(255,255,255,0.06)' },
+  legalProfileBtn:    { flexDirection:'row', alignItems:'center', gap:8, justifyContent:'center', paddingVertical:12 },
+  legalProfileBtnText:{ fontSize:12, color:Colors.textMuted, fontWeight:'600' },
+  deleteAccountBtn:   { alignItems:'center', paddingVertical:12 },
+  deleteAccountBtnText:{ fontSize:13, color:'#FF8A8A', fontWeight:'700' },
 });
 
-// ── Styles écran création match ───────────────────────────────────────────────
 const cs = StyleSheet.create({
   header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, paddingTop:Platform.OS==='ios'?56:44, paddingBottom:12 },
   backBtn:          { width:38, height:38, borderRadius:19, backgroundColor:'rgba(0,230,118,0.10)', alignItems:'center', justifyContent:'center' },
@@ -3564,7 +4324,3 @@ const cs = StyleSheet.create({
   timeSlotOn:       { backgroundColor:Colors.greenDim, borderColor:Colors.green },
   timeSlotText:     { fontSize:14, fontWeight:'600', color:Colors.textMuted },
 });
-
-
-
-

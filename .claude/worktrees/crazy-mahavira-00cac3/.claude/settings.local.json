@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\" -maxdepth 3 -type d -name \"src\" -o -type d -name \"app\" 2>/dev/null | head -10)"
+    ]
+  }
+}

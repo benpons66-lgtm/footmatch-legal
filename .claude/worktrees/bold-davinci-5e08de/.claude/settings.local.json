@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(ls -la /c/Users/benpo/Documents/footmatch/)",
+      "Bash(find /c/Users/benpo/Documents/footmatch -type f \\\\\\( -name \"*mock*\" -o -name \"*fake*\" -o -name \"*seed*\" -o -name \"*dummy*\" -o -name \"*fixture*\" \\\\\\) 2>/dev/null)",
+      "Bash(grep -r \"FAKE_\\\\|MOCK_\\\\|hardcoded\\\\|const.*=.*\\\\[{\" /c/Users/benpo/Documents/footmatch --include=\"*.tsx\" --include=\"*.ts\" ! -path \"*/node_modules/*\" ! -path \"*/.expo/*\")",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" status --short)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" diff App.tsx --stat)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" diff screens/PlayersScreen.tsx --stat)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" diff screens/CommunityScreen.tsx --stat)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" diff --name-only)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" diff screens/PlayersScreen.tsx)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" add data/fakeData.ts)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" status --short data/fakeData.ts)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" show master:screens/PlayersScreen.tsx)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" add App.tsx screens/PlayersScreen.tsx)",
+      "Bash(git -C C:/Users/benpo/Documents/footmatch commit -m ' *)",
+      "Bash(git -C \"C:/Users/benpo/Documents/footmatch\" add App.tsx)"
+    ]
+  }
+}

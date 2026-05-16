@@ -289,19 +289,18 @@ export default function ChampionshipDetailScreen({ championship, currentUserId, 
   async function handleSetDate() {
     if (!dateModal || !dateInput || !timeInput) return;
     const dt = new Date(`${dateInput}T${timeInput}:00`);
-    if (Number.isNaN(dt.getTime())) {
-      Alert.alert('Erreur', 'Date invalide');
-      return;
-    }
-
+    if (Number.isNaN(dt.getTime())) { Alert.alert('Erreur', 'Date invalide'); return; }
+    const matchId = dateModal.id;
+    const iso = dt.toISOString();
     try {
       const { error } = await supabase
         .from('championship_matches')
-        .update({ scheduled_at: dt.toISOString(), status: 'scheduled' })
-        .eq('id', dateModal.id);
+        .update({ scheduled_at: iso, status: 'scheduled' })
+        .eq('id', matchId);
       if (error) throw error;
+      // Mise à jour locale — pas de rechargement réseau
+      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, scheduled_at: iso, status: 'scheduled' } : m));
       setDateModal(null);
-      await loadAll();
     } catch (e: unknown) {
       Alert.alert('Erreur', e instanceof Error ? e.message : String(e));
     }
@@ -311,21 +310,19 @@ export default function ChampionshipDetailScreen({ championship, currentUserId, 
     if (!resultModal) return;
     const hs = parseInt(homeScore, 10);
     const as = parseInt(awayScore, 10);
-    if (Number.isNaN(hs) || Number.isNaN(as) || hs < 0 || as < 0) {
-      Alert.alert('Erreur', 'Entre des scores valides');
-      return;
-    }
-
+    if (Number.isNaN(hs) || Number.isNaN(as) || hs < 0 || as < 0) { Alert.alert('Erreur', 'Entre des scores valides'); return; }
+    const matchId = resultModal.id;
     try {
       const { error } = await supabase
         .from('championship_matches')
         .update({ home_score: hs, away_score: as, status: 'played' })
-        .eq('id', resultModal.id);
+        .eq('id', matchId);
       if (error) throw error;
+      // Mise à jour locale — pas de rechargement réseau
+      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, home_score: hs, away_score: as, status: 'played' } : m));
       setResultModal(null);
       setHomeScore('');
       setAwayScore('');
-      await loadAll();
     } catch (e: unknown) {
       Alert.alert('Erreur', e instanceof Error ? e.message : String(e));
     }
@@ -335,21 +332,19 @@ export default function ChampionshipDetailScreen({ championship, currentUserId, 
     if (!scoringMatch) return;
     const hs = parseInt(homeScoreInput, 10);
     const as = parseInt(awayScoreInput, 10);
-    if (Number.isNaN(hs) || Number.isNaN(as) || hs < 0 || as < 0) {
-      Alert.alert('Erreur', 'Entre des scores valides');
-      return;
-    }
-
+    if (Number.isNaN(hs) || Number.isNaN(as) || hs < 0 || as < 0) { Alert.alert('Erreur', 'Entre des scores valides'); return; }
+    const matchId = scoringMatch.id;
     try {
       const { error } = await supabase
         .from('championship_matches')
         .update({ home_score: hs, away_score: as, status: 'played' })
-        .eq('id', scoringMatch.id);
+        .eq('id', matchId);
       if (error) throw error;
+      // Mise à jour locale — pas de rechargement réseau
+      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, home_score: hs, away_score: as, status: 'played' } : m));
       setScoringMatch(null);
       setHomeScoreInput('');
       setAwayScoreInput('');
-      await loadAll();
       Alert.alert('Score enregistre', 'Le classement a ete mis a jour.');
     } catch (e: unknown) {
       Alert.alert('Erreur', e instanceof Error ? e.message : String(e));

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>FootMatch — Profil joueur</title>
+  <meta name="description" content="Voir le profil de ce joueur sur FootMatch — trouve un match en 30 secondes.">
+  <meta property="og:title" content="FootMatch — Profil joueur ⚽">
+  <meta property="og:description" content="Rejoins ce joueur sur FootMatch.">
+  <meta property="og:type" content="website">
+  <meta name="apple-itunes-app" content="app-id=REPLACE_WITH_APP_STORE_ID">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --green: #00E676;
+      --green-dim: rgba(0,230,118,0.12);
+      --green-border: rgba(0,230,118,0.22);
+      --bg: #080D08;
+      --bg2: #0F160F;
+      --bg3: #172017;
+      --text: #E8F5E8;
+      --muted: #5A7A5A;
+    }
+    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    body { display: flex; flex-direction: column; align-items: center; padding: 0 20px 48px; }
+    .topbar { width: 100%; max-width: 480px; display: flex; align-items: center; justify-content: center; padding: 28px 0 24px; gap: 8px; }
+    .logo-dot { font-size: 26px; }
+    .logo-text { font-size: 20px; font-weight: 900; color: var(--green); letter-spacing: 0.5px; text-transform: uppercase; }
+    .card { width: 100%; max-width: 480px; background: var(--bg2); border: 1px solid var(--green-border); border-radius: 20px; padding: 28px 24px 24px; margin-bottom: 20px; }
+    .card-skeleton { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+    /* Avatar */
+    .avatar-row { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+    .avatar-circle {
+      width: 64px; height: 64px; border-radius: 32px;
+      background: var(--green-dim); border: 2px solid var(--green-border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 30px; flex-shrink: 0;
+    }
+    .avatar-info { flex: 1; }
+    .player-name { font-size: 22px; font-weight: 900; color: var(--text); }
+    .player-rank {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: 700; color: var(--green);
+      background: var(--green-dim); border: 1px solid var(--green-border);
+      border-radius: 999px; padding: 3px 10px; margin-top: 6px;
+    }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 6px; }
+    .stat-box { background: var(--bg3); border-radius: 12px; padding: 12px 8px; text-align: center; }
+    .stat-val { font-size: 20px; font-weight: 900; color: var(--text); }
+    .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; font-weight: 600; }
+
+    /* Skeleton lines */
+    .skel { background: var(--bg3); border-radius: 6px; }
+    .skel-circle { width: 64px; height: 64px; border-radius: 32px; }
+    .skel-line { height: 14px; }
+
+    /* CTA */
+    .cta-section { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; }
+    .btn-primary {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      background: var(--green); color: #000; font-size: 16px; font-weight: 900;
+      text-transform: uppercase; letter-spacing: 0.5px; border-radius: 999px;
+      padding: 16px 28px; border: none; cursor: pointer; text-decoration: none;
+      box-shadow: 0 0 24px rgba(0,230,118,0.35); transition: opacity 0.15s, transform 0.15s;
+    }
+    .btn-primary:active { opacity: 0.85; transform: scale(0.98); }
+    .btn-primary .emoji { font-size: 20px; }
+    .btn-stores { display: flex; gap: 10px; }
+    .btn-store {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
+      background: var(--bg3); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+      padding: 12px; text-decoration: none; color: var(--text); font-size: 13px; font-weight: 700;
+    }
+    .store-sub { font-size: 10px; color: var(--muted); font-weight: 500; display: block; }
+    .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
+    .hint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+    .error-msg { font-size: 14px; color: var(--muted); text-align: center; padding: 24px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span class="logo-dot">⚽</span>
+    <span class="logo-text">FootMatch</span>
+  </div>
+
+  <div class="card card-skeleton" id="card">
+    <div class="avatar-row">
+      <div class="skel skel-circle"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+        <div class="skel skel-line" style="width:60%"></div>
+        <div class="skel skel-line" style="width:35%;height:20px;border-radius:999px;"></div>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="skel" style="height:60px;border-radius:12px;"></div>
+      <div class="skel" style="height:60px;border-radius:12px;"></div>
+      <div class="skel" style="height:60px;border-radius:12px;"></div>
+    </div>
+  </div>
+
+  <div class="cta-section" id="cta">
+    <div class="skel" style="height:54px;border-radius:999px;"></div>
+    <div class="btn-stores">
+      <div class="skel" style="height:52px;border-radius:14px;flex:1;"></div>
+      <div class="skel" style="height:52px;border-radius:14px;flex:1;"></div>
+    </div>
+  </div>
+
+<script>
+  const SUPABASE_URL  = 'https://gryuednaikgsfdwofbxd.supabase.co';
+  const ANON_KEY      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyeXVlZG5haWtnc2Zkd29mYnhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxOTc0OTMsImV4cCI6MjA4OTc3MzQ5M30.yE9aXv5G7x6B3n7uiIHWoSEW4Uupzf-kojDfyQxR83Q';
+  const APP_STORE_URL = 'https://apps.apple.com/app/footmatch/id6746648808';
+  const PLAY_STORE_URL= 'https://play.google.com/store/apps/details?id=fr.footmatch.app';
+
+  const RANK_LABELS = { D4:'Débutant', D3:'Amateur', D2:'Confirmé', D1:'Expert', PRO:'Pro' };
+  const AVATARS = ['⚡','🔥','💎','👑','🦅','🐉','🌟','🏆'];
+
+  function getPlayerId() {
+    const params = new URLSearchParams(window.location.search);
+    const fromParam = params.get('id');
+    if (fromParam && isUUID(fromParam)) return fromParam;
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (isUUID(parts[i])) return parts[i];
+    }
+    return null;
+  }
+
+  function isUUID(s) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  }
+
+  const playerId = getPlayerId();
+
+  async function fetchPlayer(id) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${id}&select=id,pseudo,reputation_score,reputation_rank,avatar_id&limit=1`,
+      { headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` } }
+    );
+    const data = await res.json();
+    return data[0] ?? null;
+  }
+
+  async function fetchPlayerStats(id) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/match_players?user_id=eq.${id}&status=eq.confirmed&select=match_id`,
+      { headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` } }
+    );
+    const data = await res.json();
+    return { matchesPlayed: Array.isArray(data) ? data.length : 0 };
+  }
+
+  function getLevelLabel(score) {
+    if (score >= 5000) return 'PRO';
+    if (score >= 2000) return 'D1';
+    if (score >= 800)  return 'D2';
+    if (score >= 200)  return 'D3';
+    return 'D4';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderCard(player, stats) {
+    const card = document.getElementById('card');
+    card.classList.remove('card-skeleton');
+
+    if (!player) {
+      card.innerHTML = '<p class="error-msg">Ce joueur est introuvable ou a supprimé son compte.</p>';
+      return;
+    }
+
+    const rank = player.reputation_rank || getLevelLabel(player.reputation_score || 0);
+    const rankLabel = RANK_LABELS[rank] || rank;
+    const score = player.reputation_score || 0;
+    const matchesPlayed = stats?.matchesPlayed ?? 0;
+    const avatarEmoji = AVATARS[(player.avatar_id || 0) % AVATARS.length];
+
+    card.innerHTML = `
+      <div class="avatar-row">
+        <div class="avatar-circle">${avatarEmoji}</div>
+        <div class="avatar-info">
+          <div class="player-name">${escapeHtml(player.pseudo)}</div>
+          <div class="player-rank">⚡ ${rankLabel} · ${score} pts</div>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-val">${matchesPlayed}</div><div class="stat-label">Matchs joués</div></div>
+        <div class="stat-box"><div class="stat-val">${score}</div><div class="stat-label">Réputation</div></div>
+        <div class="stat-box"><div class="stat-val">${rank}</div><div class="stat-label">Niveau</div></div>
+      </div>
+    `;
+  }
+
+  function renderCTA(playerId, pseudo) {
+    const cta = document.getElementById('cta');
+    const appSchemeUrl = `footmatch://joueur/${playerId}`;
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    cta.innerHTML = `
+      <a class="btn-primary" id="openBtn" href="${appSchemeUrl}">
+        <span class="emoji">⚽</span>
+        Voir ${escapeHtml(pseudo || 'ce joueur')} dans FootMatch
+      </a>
+      <div class="divider">ou télécharge l'app gratuite</div>
+      <div class="btn-stores">
+        <a class="btn-store" href="${APP_STORE_URL}" ${isAndroid ? 'style="display:none"' : ''}>
+          <span>🍎</span><span><span class="store-sub">Télécharger sur</span>App Store</span>
+        </a>
+        <a class="btn-store" href="${PLAY_STORE_URL}" ${isIOS ? 'style="display:none"' : ''}>
+          <span>🤖</span><span><span class="store-sub">Disponible sur</span>Google Play</span>
+        </a>
+      </div>
+      <p class="hint">FootMatch est gratuit · Trouve un match en 30 secondes</p>
+    `;
+
+    let appOpened = false;
+    document.addEventListener('visibilitychange', () => { if (document.hidden) appOpened = true; });
+    window.addEventListener('blur', () => { appOpened = true; });
+
+    document.getElementById('openBtn').addEventListener('click', e => {
+      e.preventDefault();
+      window.location.href = appSchemeUrl;
+      setTimeout(() => {
+        if (!appOpened) {
+          if (isIOS) window.open(APP_STORE_URL, '_blank');
+          else if (isAndroid) window.open(PLAY_STORE_URL, '_blank');
+        }
+      }, 1600);
+    });
+  }
+
+  function updateMeta(player) {
+    if (!player) return;
+    const rank = player.reputation_rank || getLevelLabel(player.reputation_score || 0);
+    const desc = `${player.pseudo} · ${RANK_LABELS[rank] || rank} · ${player.reputation_score || 0} pts de réputation sur FootMatch`;
+    document.title = `${player.pseudo} — FootMatch ⚽`;
+    document.querySelector('meta[property="og:title"]').setAttribute('content', `${player.pseudo} sur FootMatch ⚽`);
+    document.querySelector('meta[property="og:description"]').setAttribute('content', desc);
+    document.querySelector('meta[name="description"]').setAttribute('content', desc);
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  (async function main() {
+    if (!playerId) {
+      document.getElementById('card').innerHTML = '<p class="error-msg">Lien invalide — aucun joueur trouvé.</p>';
+      document.getElementById('cta').innerHTML = `<a class="btn-primary" href="${APP_STORE_URL}"><span class="emoji">⚽</span>Télécharger FootMatch</a>`;
+      return;
+    }
+    try {
+      const [player, stats] = await Promise.all([fetchPlayer(playerId), fetchPlayerStats(playerId)]);
+      renderCard(player, stats);
+      updateMeta(player);
+      renderCTA(playerId, player?.pseudo ?? 'ce joueur');
+    } catch {
+      renderCard(null, null);
+      renderCTA(playerId, 'ce joueur');
+    }
+  })();
+</script>
+</body>
+</html>

@@ -30,10 +30,11 @@ DECLARE
   v_noshows            INTEGER := 0;
   v_total              INTEGER := 0;
 BEGIN
-  -- Matchs joues (+200 par match confirme)
+  -- Matchs joues (+200 par match termine)
   SELECT COUNT(*) INTO v_matches_played
-  FROM match_players
-  WHERE user_id = p_user_id AND status = 'confirmed';
+  FROM match_players mp
+  JOIN matches m ON m.id = mp.match_id
+  WHERE mp.user_id = p_user_id AND mp.status = 'confirmed' AND m.status = 'played';
 
   -- Matchs organises (+700 par match cree hors annule)
   SELECT COUNT(*) INTO v_matches_organized

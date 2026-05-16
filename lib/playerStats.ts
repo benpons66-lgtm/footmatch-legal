@@ -21,13 +21,14 @@ export function capFakeReputationScore(score: number): number {
 }
 
 export function computeReputationScoreFromStats(stats: ComputedPlayerStats): number {
+  // Le créateur est automatiquement participant → on soustrait pour ne pas
+  // cumuler les 3 pts créateur ET les 2 pts participation sur le même match.
+  const pureParticipations = Math.max(0, stats.matchesPlayed - stats.matchesOrganized);
   return Math.max(
     0,
-    stats.matchesPlayed * 200 +
-      stats.matchesOrganized * 700 +
-      stats.ratingsGiven * 80 +
-      stats.goodRatingsReceived * 150 -
-      stats.noShows * 1000
+    stats.matchesOrganized * 3 +  // match créé et terminé : 3 pts
+    pureParticipations * 2 +       // participation (hors matchs créés) : 2 pts
+    stats.ratingsGiven * 1         // note de match soumise : 1 pt
   );
 }
 
@@ -49,10 +50,9 @@ export function isLaunchCommunityProfile(profileId: string, stats: ComputedPlaye
   return isSeededProfileId(profileId);
 }
 
-export function getDisplayReputationScore(profileId: string, storedScore: number | null | undefined, stats: ComputedPlayerStats): number {
-  if (isSeededProfileId(profileId)) return capFakeReputationScore(computeReputationScoreFromStats(stats));
-  if (!hasVisibleActivity(stats)) return computeReputationScoreFromStats(stats);
-  return storedScore ?? 0;
+export function getDisplayReputationScore(_profileId: string, storedScore: number | null | undefined, stats: ComputedPlayerStats): number {
+  if (storedScore != null && storedScore > 0) return storedScore;
+  return computeReputationScoreFromStats(stats);
 }
 
 function createEmptyStats(): ComputedPlayerStats {
@@ -77,10 +77,21 @@ export async function fetchComputedStatsForUsers(userIds: string[]): Promise<Rec
 
   if (ids.length === 0) return statsByUser;
 
+  // Un match est "joué" si son heure de début est passée depuis plus de 3h et qu'il n'est pas annulé.
+  // On utilise le temps plutôt que status='played' car les matchs peuvent ne pas avoir été
+  // marqués explicitement comme joués.
+  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+
   const [matchPlayersRes, matchesRes, ratingsGivenRes, ratingsReceivedRes, noShowsRes] = await Promise.all([
-    supabase.from('match_players').select('user_id').in('user_id', ids).eq('status', 'confirmed'),
-    supabase.from('matches').select('organizer_id').in('organizer_id', ids).neq('status', 'cancelled'),
-    supabase.from('match_ratings').select('user_id, rating').in('user_id', ids),
+    supabase
+      .from('match_players')
+      .select('user_id, matches!inner(scheduled_at, status)')
+      .in('user_id', ids)
+      .eq('status', 'confirmed')
+      .lt('matches.scheduled_at', threeHoursAgo)
+      .neq('matches.status', 'cancelled'),
+    supabase.from('matches').select('organizer_id').in('organizer_id', ids).eq('status', 'played'),
+    supabase.from('match_ratings').select('user_id').in('user_id', ids),
     (async () => {
       const res = await supabase.from('match_ratings').select('rated_user_id, rating').in('rated_user_id', ids);
       if (!res.error) return res;

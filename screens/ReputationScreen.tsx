@@ -15,12 +15,12 @@ const RANK_THRESHOLDS = LEVEL_THRESHOLDS.map((t, i, arr) => ({
 }));
 
 const SCORE_BREAKDOWN = [
-  { icon:'⚽', label:'Match joué',           points:'+200',    desc:'Par match confirmé et joué'                          },
-  { icon:'🎯', label:'Match organisé',       points:'+700',    desc:'Par match créé (hors annulé)'                        },
-  { icon:'📝', label:'Note donnée',          points:'+80',     desc:'Récompense la participation active'                  },
-  { icon:'🏆', label:'Compétition créée',    points:'+3 000',  desc:'Lancer un championnat ou une coupe'                  },
-  { icon:'⭐', label:'Bonne note reçue',     points:'+150',    desc:'Bonus par note de 4 ou 5 étoiles reçue'              },
-  { icon:'❌', label:'No-show',              points:'-1 000',  desc:'Absence non signalée — pénalité sévère'              },
+  { iconName:'football',     label:'Match joué',        points:'+200',    desc:'Par match confirmé et joué'                },
+  { iconName:'calendar',     label:'Match organisé',    points:'+700',    desc:'Par match créé (hors annulé)'              },
+  { iconName:'pencil',       label:'Note donnée',       points:'+80',     desc:'Récompense la participation active'        },
+  { iconName:'trophy',       label:'Compétition créée', points:'+3 000',  desc:'Lancer un championnat ou une coupe'        },
+  { iconName:'star',         label:'Bonne note reçue',  points:'+150',    desc:'Bonus par note de 4 ou 5 étoiles reçue'    },
+  { iconName:'close-circle', label:'No-show',           points:'-1 000',  desc:'Absence non signalée — pénalité sévère'   },
 ];
 
 interface Props {
@@ -134,7 +134,10 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
     <View style={s.container}>
       <View style={s.header}>
         <TouchableOpacity onPress={onBack}><Ionicons name="chevron-back" size={22} color={Colors.green} /></TouchableOpacity>
-        <Text style={s.headerTitle}>⚡ Réputation</Text>
+        <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
+          <Ionicons name="flash" size={18} color={Colors.green} />
+          <Text style={s.headerTitle}>Réputation</Text>
+        </View>
         <ReputationBadge score={score} rank={rank} size="sm" showScore />
       </View>
 
@@ -152,7 +155,7 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
         {tab === 'score' && <>
           <View style={[s.heroCard, { borderColor:cfg.borderColor }]}>
             <View style={[s.ring, { borderColor:cfg.color }]}>
-              <Text style={{ fontSize:26 }}>{cfg.emoji}</Text>
+              <Ionicons name={cfg.iconName as any} size={26} color={cfg.color} />
               <Text style={[s.ringN, { color:cfg.color }]}>{displayScore}</Text>
               <Text style={s.ringLabel}>pts</Text>
             </View>
@@ -162,10 +165,16 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
             {lvlPrg.next && nextCfg && (
               <View style={s.progressSection}>
                 <View style={{ flexDirection:'row', justifyContent:'space-between', marginBottom:6 }}>
-                  <Text style={{ fontSize:11, color:cfg.color, fontWeight:'800', textTransform:'uppercase' }}>{cfg.emoji} {rank}</Text>
-                  <Text style={{ fontSize:11, color:nextCfg.color, fontWeight:'700' }}>
-                    {nextCfg.emoji} {lvlPrg.next} → {lvlPrg.nextScore} pts
-                  </Text>
+                  <View style={{ flexDirection:'row', alignItems:'center', gap:4 }}>
+                    <Ionicons name={cfg.iconName as any} size={11} color={cfg.color} />
+                    <Text style={{ fontSize:11, color:cfg.color, fontWeight:'800', textTransform:'uppercase' }}>{rank}</Text>
+                  </View>
+                  <View style={{ flexDirection:'row', alignItems:'center', gap:4 }}>
+                    <Ionicons name={nextCfg.iconName as any} size={11} color={nextCfg.color} />
+                    <Text style={{ fontSize:11, color:nextCfg.color, fontWeight:'700' }}>
+                      {lvlPrg.next} → {lvlPrg.nextScore} pts
+                    </Text>
+                  </View>
                 </View>
                 <View style={s.progressBar}>
                   <View style={[s.progressFill, { width:`${Math.min(progressPct,100)}%` as `${number}%`, backgroundColor:cfg.color }]} />
@@ -179,13 +188,13 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
 
           <View style={s.statsGrid}>
             {[
-              { icon:'⚽', label:'Matchs joués',  value:stats.matchesPlayed,                             color:Colors.green      },
-              { icon:'🎯', label:'Organisés',      value:stats.matchesOrganized,                          color:Colors.green      },
-              { icon:'⭐', label:'Note moyenne',   value:stats.avgRating ? `${stats.avgRating}/5` : '—', color:Colors.greenLight  },
-              { icon:'📝', label:'Notes données',  value:stats.ratingsGiven,                              color:Colors.greenLight  },
+              { iconName:'football',     label:'Matchs joués',  value:stats.matchesPlayed,                             color:Colors.green      },
+              { iconName:'calendar',     label:'Organisés',      value:stats.matchesOrganized,                          color:Colors.green      },
+              { iconName:'star',         label:'Note moyenne',   value:stats.avgRating ? `${stats.avgRating}/5` : '—', color:Colors.greenLight  },
+              { iconName:'pencil',       label:'Notes données',  value:stats.ratingsGiven,                              color:Colors.greenLight  },
             ].map(st=>(
               <View key={st.label} style={s.statCard}>
-                <Text style={{ fontSize:22 }}>{st.icon}</Text>
+                <Ionicons name={st.iconName as any} size={22} color={st.color} />
                 <Text style={[s.statN, { color:st.color }]}>{st.value}</Text>
                 <Text style={s.statL}>{st.label}</Text>
               </View>
@@ -194,9 +203,12 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
 
           {stats.noShows > 0 && (
             <View style={s.noShowAlert}>
-              <Text style={{ color:Colors.greenDark, fontWeight:'600', textAlign:'center' }}>
-                ❌ {stats.noShows} absence{stats.noShows>1?'s':''} signalée{stats.noShows>1?'s':''} · -{stats.noShows*1000} pts
-              </Text>
+              <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'center', gap:6 }}>
+                <Ionicons name="close-circle" size={16} color={Colors.greenDark} />
+                <Text style={{ color:Colors.greenDark, fontWeight:'600' }}>
+                  {stats.noShows} absence{stats.noShows>1?'s':''} signalée{stats.noShows>1?'s':''} · -{stats.noShows*1000} pts
+                </Text>
+              </View>
             </View>
           )}
 
@@ -206,7 +218,10 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
             const pct = Math.min(Math.round((totalEvents / 150) * 100), 100);
             return (
               <View style={[s.breakdownCard, { borderColor: Colors.green + '20' }]}>
-                <Text style={s.breakdownTitle}>🎯 Objectif GOAT</Text>
+                <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginBottom:4 }}>
+                  <Ionicons name="trophy" size={16} color={Colors.green} />
+                  <Text style={s.breakdownTitle}>Objectif GOAT</Text>
+                </View>
                 <Text style={{ fontSize:12, color:Colors.textMuted, marginBottom:10 }}>
                   Participe à 150 événements pour atteindre le statut légendaire
                 </Text>
@@ -224,10 +239,15 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
           })()}
 
           <View style={s.breakdownCard}>
-            <Text style={s.breakdownTitle}>📊 Comment ça marche</Text>
+            <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginBottom:12 }}>
+              <Ionicons name="bar-chart" size={16} color={Colors.green} />
+              <Text style={s.breakdownTitle}>Comment ça marche</Text>
+            </View>
             {SCORE_BREAKDOWN.map(item=>(
               <View key={item.label} style={s.breakdownRow}>
-                <Text style={{ fontSize:20, width:28 }}>{item.icon}</Text>
+                <View style={{ width:28, alignItems:'center' }}>
+                  <Ionicons name={item.iconName as any} size={20} color={item.points.startsWith('+')?Colors.green:Colors.greenDark} />
+                </View>
                 <View style={{ flex:1 }}>
                   <Text style={{ fontSize:13, fontWeight:'700', color:Colors.text }}>{item.label}</Text>
                   <Text style={{ fontSize:11, color:Colors.textMuted, marginTop:2 }}>{item.desc}</Text>
@@ -237,7 +257,10 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
             ))}
           </View>
 
-          <Text style={s.sectionTitle}>🏅 Les 20 niveaux FootMatch</Text>
+          <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginBottom:12 }}>
+            <Ionicons name="medal" size={16} color={Colors.green} />
+            <Text style={s.sectionTitle}>Les 20 niveaux FootMatch</Text>
+          </View>
           {(['District','Régional','National','Pro','Élite','GOAT'] as const).map(tier => (
             <View key={tier} style={{ marginBottom:12 }}>
               <Text style={{ fontSize:11, color:TIER_COLOR[tier]??Colors.textMuted, fontWeight:'900', textTransform:'uppercase', letterSpacing:1, marginBottom:6 }}>
@@ -248,7 +271,9 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
                 const isCurrent = r.rank === rank;
                 return (
                   <View key={r.rank} style={[s.rankItem, isCurrent && { borderColor:rc.color, backgroundColor:rc.bgColor }]}>
-                    <Text style={{ fontSize:20, width:30 }}>{rc.emoji}</Text>
+                    <View style={{ width:30, alignItems:'center' }}>
+                      <Ionicons name={rc.iconName as any} size={20} color={isCurrent?rc.color:Colors.textMuted} />
+                    </View>
                     <View style={{ flex:1 }}>
                       <Text style={{ fontSize:14, fontWeight:'800', color:isCurrent?rc.color:Colors.text }}>{r.rank}</Text>
                       <Text style={{ fontSize:10, color:Colors.textMuted, marginTop:1 }}>

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
-import type { Venue, VenueProposal, PhotoAsset, VenueForm, MatchType, Coordinates } from '../types';
+import type { Venue, VenueProposal, PhotoAsset, VenueForm, Coordinates } from '../types';
+import type { MatchType } from '../constants/theme';
 
 interface UseVenuesReturn {
   venues: Venue[];
@@ -79,7 +80,7 @@ export function useVenues(
           types: ['five', 'city'] as MatchType[],
           source: 'osm' as const,
         }))
-        .filter((v): v is Venue => Boolean(v.latitude && v.longitude));
+        .filter((v) => Boolean(v.latitude && v.longitude)) as Venue[];
 
       if (newVenues.length > 0) {
         setVenues((prev) => [...prev, ...newVenues]);

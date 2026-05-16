@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\" && find . -maxdepth 3 -name \"*.tsx\" -o -name \"*.ts\" | head -20)",
+      "Bash(xargs grep -l \"address\\\\|adresse\\\\|postal_code\\\\|code postal\")"
+    ]
+  }
+}

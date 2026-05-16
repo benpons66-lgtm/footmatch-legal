@@ -1,8 +1,8 @@
 // screens/PlayersScreen.tsx — FootMatch Joueurs v3 (Supabase, seed unifié)
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator,
+  StyleSheet, ActivityIndicator, type TextInput as TextInputType,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius } from '../constants/theme';
@@ -13,25 +13,35 @@ import { fetchComputedStatsForUsers } from '../lib/playerStats';
 
 type Level = 'D4' | 'D3' | 'D2';
 
+interface Disponibilite {
+  jour:  string;
+  debut: string;
+  fin:   string;
+}
+
 interface Player {
-  id:             string;
-  pseudo:         string;
-  level:          Level;
-  reputation:     number;
-  city:           string;
-  postalCode:     string;
-  matchesPlayed:  number;
+  id:               string;
+  pseudo:           string;
+  level:            Level;
+  reputation:       number;
+  city:             string;
+  postalCode:       string;
+  matchesPlayed:    number;
+  disponibilites:   Disponibilite[];
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  currentUserId:  string | null;
-  blockedUserIds: string[];
-  guestMode:      boolean;
-  onInvite:       (playerId: string) => void;
+  currentUserId:    string | null;
+  blockedUserIds:   string[];
+  guestMode:        boolean;
+  cityName?:        string;
+  onInvite:         (playerId: string) => void;
   onShowGuestModal: () => void;
-  onViewProfile:  (playerId: string) => void;
+  onViewProfile:    (playerId: string) => void;
+  /** Incrémenter ce compteur depuis le parent pour forcer le focus sur la barre de recherche */
+  searchSignal?:    number;
 }
 
 // ─── Config niveaux ───────────────────────────────────────────────────────────
@@ -44,9 +54,9 @@ const LEVEL_CFG: Record<Level, { label: string; color: string; bg: string; borde
 
 const FILTERS: { key: 'all' | Level; label: string }[] = [
   { key: 'all', label: 'Tous'   },
-  { key: 'D2',  label: '⚡ D2' },
-  { key: 'D3',  label: '🎯 D3' },
-  { key: 'D4',  label: '🌱 D4' },
+  { key: 'D2',  label: '🏆 D2' },
+  { key: 'D3',  label: '⚽ D3' },
+  { key: 'D4',  label: '🎽 D4' },
 ];
 
 // Niveau brut → clé Level (D4 par défaut). Tolère anciennes valeurs FR si encore en base.
@@ -57,30 +67,99 @@ function normalizeLevel(raw: string | null | undefined): Level {
   return 'D4';
 }
 
+// ─── Cache module-level (survit aux navigations) ──────────────────────────────
+
+let _cachedPlayers: Player[] = [];
+let _cacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+export function getCachedPlayer(id: string) {
+  return _cachedPlayers.find(p => p.id === id) ?? null;
+}
+
+/** Injecte des données minimales dans le cache si le joueur n'y est pas encore.
+ *  Appelé avant de naviguer vers PlayerProfileScreen pour affichage instantané. */
+export function seedPlayerCache(partial: { id: string; pseudo: string; reputation: number; matchesPlayed?: number }) {
+  if (_cachedPlayers.find(p => p.id === partial.id)) return; // déjà en cache
+  _cachedPlayers = [
+    ..._cachedPlayers,
+    {
+      id:             partial.id,
+      pseudo:         partial.pseudo,
+      level:          'D4',
+      reputation:     partial.reputation,
+      city:           '',
+      postalCode:     '',
+      matchesPlayed:  partial.matchesPlayed ?? 0,
+      disponibilites: [],
+    },
+  ];
+}
+
+export async function prefetchPlayers(): Promise<void> {
+  if (_cachedPlayers.length > 0 && Date.now() - _cacheTime < CACHE_TTL) return;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, pseudo, level, reputation_score, city, postal_code, disponibilites')
+    .order('reputation_score', { ascending: false })
+    .limit(500);
+  if (!data || error) return;
+  const stats = await fetchComputedStatsForUsers(data.map((p: any) => p.id));
+  _cachedPlayers = data.map((p: any) => ({
+    id:             p.id,
+    pseudo:         p.pseudo ?? 'Joueur',
+    level:          normalizeLevel(p.level),
+    reputation:     p.reputation_score ?? 0,
+    city:           p.city ?? 'Perpignan',
+    postalCode:     p.postal_code ?? '66000',
+    matchesPlayed:  stats[p.id]?.matchesPlayed ?? 0,
+    disponibilites: Array.isArray(p.disponibilites) ? p.disponibilites : [],
+  }));
+  _cacheTime = Date.now();
+}
+
 // ─── Composant ────────────────────────────────────────────────────────────────
 
+/** Formate les disponibilités pour l'affichage compact dans la carte joueur */
+function formatDispos(dispos: Disponibilite[]): string | null {
+  if (!dispos || dispos.length === 0) return null;
+  const first2 = dispos.slice(0, 2).map(d => `${d.jour} ${d.debut}-${d.fin}`).join(' · ');
+  const extra  = dispos.length > 2 ? ` …+${dispos.length - 2}` : '';
+  return first2 + extra;
+}
+
 export default function PlayersScreen({
-  currentUserId, blockedUserIds, guestMode, onInvite, onShowGuestModal, onViewProfile,
+  currentUserId, blockedUserIds, guestMode, cityName = 'Perpignan', onInvite, onShowGuestModal, onViewProfile, searchSignal,
 }: Props) {
 
-  const [players, setPlayers]     = useState<Player[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [players, setPlayers]     = useState<Player[]>(_cachedPlayers);
+  const [loading, setLoading]     = useState(_cachedPlayers.length === 0);
   const [search,    setSearch]    = useState('');
   const [activeFilter, setFilter] = useState<'all' | Level>('all');
+  const searchInputRef            = useRef<TextInputType>(null);
+
+  // Quand le parent incrémente searchSignal, on focus la barre de recherche
+  useEffect(() => {
+    if (searchSignal && searchSignal > 0) {
+      setTimeout(() => searchInputRef.current?.focus(), 80);
+    }
+  }, [searchSignal]);
 
   // ── Fetch profiles + stats Supabase ─────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
+      const cacheHit = _cachedPlayers.length > 0 && Date.now() - _cacheTime < CACHE_TTL;
+      if (!cacheHit) setLoading(true);
+
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, pseudo, level, reputation_score, city, postal_code')
+        .select('id, pseudo, level, reputation_score, city, postal_code, disponibilites')
         .order('reputation_score', { ascending: false })
         .limit(500);
 
-      if (error || !data) { if (!cancelled) { setPlayers([]); setLoading(false); } return; }
+      if (error || !data) { if (!cancelled && !cacheHit) { setPlayers([]); setLoading(false); } return; }
 
       const ids   = data.map(p => p.id);
       const stats = await fetchComputedStatsForUsers(ids);
@@ -88,15 +167,18 @@ export default function PlayersScreen({
       if (cancelled) return;
 
       const mapped: Player[] = data.map((p: any) => ({
-        id:            p.id,
-        pseudo:        p.pseudo ?? 'Joueur',
-        level:         normalizeLevel(p.level),
-        reputation:    p.reputation_score ?? 0,
-        city:          p.city ?? 'Perpignan',
-        postalCode:    p.postal_code ?? '66000',
-        matchesPlayed: stats[p.id]?.matchesPlayed ?? 0,
+        id:             p.id,
+        pseudo:         p.pseudo ?? 'Joueur',
+        level:          normalizeLevel(p.level),
+        reputation:     p.reputation_score ?? 0,
+        city:           p.city ?? 'Perpignan',
+        postalCode:     p.postal_code ?? '66000',
+        matchesPlayed:  stats[p.id]?.matchesPlayed ?? 0,
+        disponibilites: Array.isArray(p.disponibilites) ? p.disponibilites : [],
       }));
 
+      _cachedPlayers = mapped;
+      _cacheTime = Date.now();
       setPlayers(mapped);
       setLoading(false);
     }
@@ -109,7 +191,6 @@ export default function PlayersScreen({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return players
-      .filter(p => p.id !== currentUserId)
       .filter(p => !blockedUserIds.includes(p.id))
       .filter(p => activeFilter === 'all' || p.level === activeFilter)
       .filter(p => {
@@ -120,14 +201,15 @@ export default function PlayersScreen({
           p.postalCode.includes(q)
         );
       });
-  }, [players, search, activeFilter, currentUserId, blockedUserIds]);
+  }, [players, search, activeFilter, blockedUserIds]);
 
-  const activeCount = players.filter(p => p.matchesPlayed > 0).length || players.length;
+  const activeCount = players.length;
 
   // ── Rendu d'une carte joueur ───────────────────────────────────────────────
   function renderPlayer({ item }: { item: Player }) {
-    const cfg   = LEVEL_CFG[item.level];
-    const init  = (item.pseudo ?? '?')[0].toUpperCase();
+    const cfg       = LEVEL_CFG[item.level];
+    const init      = (item.pseudo ?? '?')[0].toUpperCase();
+    const dispoText = formatDispos(item.disponibilites);
 
     return (
       <TouchableOpacity
@@ -159,18 +241,37 @@ export default function PlayersScreen({
             <Ionicons name="location-outline" size={11} color={Colors.textMuted} />
             <Text style={s.locText}>{item.city} · {item.postalCode}</Text>
           </View>
+
+          {/* Disponibilités compactes */}
+          <View style={s.dispoRow}>
+            <Ionicons name="time-outline" size={10} color={dispoText ? Colors.green : Colors.textDim} />
+            <Text
+              style={[s.dispoText, !dispoText && s.dispoTextEmpty]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {dispoText ?? 'Disponibilités non renseignées'}
+            </Text>
+          </View>
         </View>
 
-        <TouchableOpacity
-          style={s.inviteBtn}
-          onPress={guestMode ? onShowGuestModal : () => onInvite(item.id)}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel={`Inviter ${item.pseudo}`}
-        >
-          <Ionicons name="add-circle-outline" size={15} color={Colors.green} />
-          <Text style={s.inviteText}>Inviter</Text>
-        </TouchableOpacity>
+        {item.id !== currentUserId && (
+          <TouchableOpacity
+            style={s.inviteBtn}
+            onPress={guestMode ? onShowGuestModal : () => onInvite(item.id)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Inviter ${item.pseudo}`}
+          >
+            <Ionicons name="add-circle-outline" size={15} color={Colors.green} />
+            <Text style={s.inviteText}>Inviter</Text>
+          </TouchableOpacity>
+        )}
+        {item.id === currentUserId && (
+          <View style={s.meBadge}>
+            <Text style={s.meText}>Moi</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   }
@@ -183,13 +284,14 @@ export default function PlayersScreen({
         <View style={s.activeDot} />
         <Text style={s.activeBannerText}>
           <Text style={s.activeBannerCount}>{activeCount}</Text>
-          {' joueurs actifs maintenant à Perpignan'}
+          {` joueurs actifs autour de ${cityName}`}
         </Text>
       </View>
 
       <View style={s.searchBar}>
         <Ionicons name="search-outline" size={17} color={Colors.textMuted} />
         <TextInput
+          ref={searchInputRef}
           style={s.searchInput}
           value={search}
           onChangeText={setSearch}
@@ -230,7 +332,7 @@ export default function PlayersScreen({
         {search ? ` · "${search}"` : ''}
       </Text>
 
-      {loading ? (
+      {loading && players.length === 0 ? (
         <View style={s.empty}>
           <ActivityIndicator color={Colors.green} />
         </View>
@@ -381,6 +483,15 @@ const s = StyleSheet.create({
     borderColor: Colors.greenBorder,
   },
   inviteText: { fontSize: 11, fontWeight: '700', color: Colors.green },
+
+  dispoRow:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dispoText:     { fontSize: 10, color: Colors.green, fontWeight: '600', flex: 1 },
+  dispoTextEmpty:{ color: Colors.textDim },
+
+  meBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: Colors.greenDim, borderWidth: 1, borderColor: Colors.green + '40' },
+  meText:  { fontSize: 10, fontWeight: '700', color: Colors.green },
+
+  count: { fontSize: 11, color: Colors.textMuted, marginHorizontal: Spacing.xl, marginBottom: 6, fontWeight: '600' },
 
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },

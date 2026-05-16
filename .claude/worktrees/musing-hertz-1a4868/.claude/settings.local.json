@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:/Users/benpo/Documents/footmatch\" && grep -r \"fakeData\\\\|data/fake\" --include=\"*.tsx\" --include=\"*.ts\" -l)"
+    ]
+  }
+}

@@ -22,7 +22,7 @@ interface UseChatReturn {
   sendCommunityMessage: () => Promise<void>;
   loadCommunityMessages: (blockedUserIds: string[], currentUserId: string) => Promise<void>;
   // Shared
-  flatListRef: React.RefObject<FlatList>;
+  flatListRef: React.RefObject<FlatList | null>;
   // Report
   reportMessage: (
     message: ChatMessage | CommunityMessage,

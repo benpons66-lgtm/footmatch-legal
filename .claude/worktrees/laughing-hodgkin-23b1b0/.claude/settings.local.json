@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"from PIL import Image; print\\('ok'\\)\")",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -m pip install pillow)",
+      "Bash(cd /c/Users/benpo/Documents/footmatch && grep -n \"Continue pour monter de division\\\\|logo footmatch transparent\\\\|homeLogo\\\\|advancedStatsTitle\\\\|cardFUTBtn\\\\|Voir ma réputation\" App.tsx | head -20)",
+      "Bash(git -C /c/Users/benpo/Documents/footmatch checkout 4477cb4 -- db/fake_data_consistency.sql db/launch_realism_pass.sql db/seed_1000_players.sql db/seed_fake_data.sql db/seed_matchs_et_fixtures.sql)",
+      "Bash(git -C /c/Users/benpo/Documents/footmatch diff 4477cb4 -- App.tsx)",
+      "Bash(git -C /c/Users/benpo/Documents/footmatch status --short components/ screens/)",
+      "Bash(git -C /c/Users/benpo/Documents/footmatch diff 4477cb4 -- components/PlayerCard.tsx)",
+      "mcp__c00531b0-7559-4028-9305-5157940df4d0__list_projects",
+      "mcp__c00531b0-7559-4028-9305-5157940df4d0__execute_sql"
+    ]
+  }
+}

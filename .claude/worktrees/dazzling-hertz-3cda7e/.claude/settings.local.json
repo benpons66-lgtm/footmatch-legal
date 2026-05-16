@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(dir \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\")",
+      "Bash(grep -n \"^  }$\\\\|^  };$\" \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\\\\App.tsx\")",
+      "Bash(awk -F: '$1 > 2492 && $1 < 2800 {print}')",
+      "Bash(awk 'NR>=2492 && NR<=2800' \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\\\\App.tsx\")",
+      "Bash(awk 'NR==2669 || NR==2670 || NR==2680 || NR==2681 || NR==2682 || NR==2683' \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\\\\App.tsx\")",
+      "Bash(grep -v \"^\\\\s*//\")"
+    ]
+  }
+}

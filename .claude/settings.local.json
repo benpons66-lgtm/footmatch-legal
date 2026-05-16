@@ -35,7 +35,10 @@
       "Bash(grep -r \"export type AppUser\\\\|export interface AppUser\" /c/Users/lenovo/Documents/footmatch --include=*.ts --include=*.tsx 2)",
       "Bash(/dev/null ! -path */node_modules/*)",
       "Bash(find /c/Users/lenovo/Documents/footmatch -name types.* -maxdepth 2 ! -path */node_modules/* -o -name index.ts -maxdepth 2 ! -path */node_modules/*)",
-      "Bash(grep -r \"MOCK_MATCHES\\\\|hardcoded.*match\\\\|const.*match.*=\" /c/Users/lenovo/Documents/footmatch/*.tsx /c/Users/lenovo/Documents/footmatch/*.ts)"
+      "Bash(grep -r \"MOCK_MATCHES\\\\|hardcoded.*match\\\\|const.*match.*=\" /c/Users/lenovo/Documents/footmatch/*.tsx /c/Users/lenovo/Documents/footmatch/*.ts)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); deps={**d.get\\('dependencies',{}\\),**d.get\\('devDependencies',{}\\)}; [print\\(k,v\\) for k,v in deps.items\\(\\) if any\\(x in k for x in ['constants','notification','supabase','expo-']\\)]\")",
+      "Bash(python -c ' *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>FootMatch — Rejoins le match</title>
+  <meta name="description" content="Rejoins ce match de foot sur FootMatch — trouve un match en 30 secondes.">
+  <meta property="og:title" content="FootMatch — Rejoins le match ⚽">
+  <meta property="og:description" content="Rejoins ce match de foot sur FootMatch.">
+  <meta property="og:image" content="https://footmatch.app/og-image.png">
+  <meta property="og:type" content="website">
+  <meta name="apple-itunes-app" content="app-id=REPLACE_WITH_APP_STORE_ID">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --green: #00E676;
+      --green-dim: rgba(0,230,118,0.12);
+      --green-border: rgba(0,230,118,0.22);
+      --bg: #080D08;
+      --bg2: #0F160F;
+      --bg3: #172017;
+      --text: #E8F5E8;
+      --muted: #5A7A5A;
+    }
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 0 20px 48px;
+      min-height: 100vh;
+    }
+
+    /* ── TOP BAR ── */
+    .topbar {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 0 24px;
+      gap: 8px;
+    }
+    .logo-dot { font-size: 26px; }
+    .logo-text {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--green);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    /* ── CARD ── */
+    .card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--bg2);
+      border: 1px solid var(--green-border);
+      border-radius: 20px;
+      padding: 28px 24px 24px;
+      margin-bottom: 20px;
+    }
+    .card-skeleton {
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--green);
+      background: var(--green-dim);
+      border: 1px solid var(--green-border);
+      border-radius: 999px;
+      padding: 4px 10px;
+      margin-bottom: 14px;
+    }
+    .match-title {
+      font-size: 22px;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1.25;
+      margin-bottom: 16px;
+    }
+    .match-info {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .info-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .info-icon { font-size: 15px; min-width: 20px; text-align: center; }
+    .info-text { color: #9AB89A; }
+    .spots-bar {
+      width: 100%;
+      height: 4px;
+      background: var(--bg3);
+      border-radius: 2px;
+      margin-top: 16px;
+      overflow: hidden;
+    }
+    .spots-fill {
+      height: 100%;
+      background: var(--green);
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+    .spots-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+      text-align: right;
+    }
+    .spots-label.urgent { color: var(--green); font-weight: 700; }
+
+    /* ── SKEL LINES ── */
+    .skel { background: var(--bg3); border-radius: 6px; }
+    .skel-title { height: 22px; width: 70%; margin-bottom: 16px; }
+    .skel-row { height: 14px; width: 55%; margin-bottom: 8px; }
+    .skel-row-sm { height: 14px; width: 40%; margin-bottom: 8px; }
+
+    /* ── CTA ── */
+    .cta-section {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .btn-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--green);
+      color: #000;
+      font-size: 16px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 999px;
+      padding: 16px 28px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 0 24px rgba(0,230,118,0.35);
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .btn-primary:active { opacity: 0.85; transform: scale(0.98); }
+    .btn-primary .emoji { font-size: 20px; }
+
+    .btn-stores {
+      display: flex;
+      gap: 10px;
+    }
+    .btn-store {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      background: var(--bg3);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 14px;
+      padding: 12px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      transition: opacity 0.15s;
+    }
+    .btn-store:active { opacity: 0.7; }
+    .store-icon { font-size: 20px; }
+    .store-sub { font-size: 10px; color: var(--muted); font-weight: 500; display: block; }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 4px;
+    }
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+    }
+
+    /* Status states */
+    .status-full .btn-primary { background: #2A3A2A; color: var(--muted); box-shadow: none; pointer-events: none; }
+    .error-msg { font-size: 14px; color: var(--muted); text-align: center; padding: 24px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span class="logo-dot">⚽</span>
+    <span class="logo-text">FootMatch</span>
+  </div>
+
+  <!-- CARD : skeleton → puis match réel -->
+  <div class="card card-skeleton" id="card">
+    <div class="skel skel-title"></div>
+    <div class="skel skel-row"></div>
+    <div class="skel skel-row-sm"></div>
+    <div class="skel skel-row"></div>
+  </div>
+
+  <!-- CTA : skeleton → puis boutons réels -->
+  <div class="cta-section" id="cta">
+    <div class="skel" style="height:54px;border-radius:999px;"></div>
+    <div class="btn-stores">
+      <div class="skel" style="height:52px;border-radius:14px;flex:1;"></div>
+      <div class="skel" style="height:52px;border-radius:14px;flex:1;"></div>
+    </div>
+  </div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const SUPABASE_URL  = 'https://gryuednaikgsfdwofbxd.supabase.co';
+  const ANON_KEY      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyeXVlZG5haWtnc2Zkd29mYnhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxOTc0OTMsImV4cCI6MjA4OTc3MzQ5M30.yE9aXv5G7x6B3n7uiIHWoSEW4Uupzf-kojDfyQxR83Q';
+  const APP_STORE_URL = 'https://apps.apple.com/app/footmatch/id6746648808'; // ← remplace par l'ID réel
+  const PLAY_STORE_URL= 'https://play.google.com/store/apps/details?id=fr.footmatch.app';
+
+  // ── Extrait l'UUID du match depuis l'URL ─────────────────────────────────────
+  // Supporte :
+  //   /match/uuid  (avec rewrite serveur)
+  //   /match.html?id=uuid  (fallback query param)
+  //   footmatch://match/uuid (ne devrait pas arriver ici mais sécurité)
+  function getMatchId() {
+    const params = new URLSearchParams(window.location.search);
+    const fromParam = params.get('id');
+    if (fromParam && isUUID(fromParam)) return fromParam;
+    const path = window.location.pathname;
+    const parts = path.split('/').filter(Boolean);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (isUUID(parts[i])) return parts[i];
+    }
+    return null;
+  }
+
+  function isUUID(s) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  }
+
+  const matchId = getMatchId();
+
+  // ── Fetch match depuis Supabase (anon, RLS public pour matches) ─────────────
+  async function fetchMatch(id) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/matches?id=eq.${id}&select=id,title,scheduled_at,current_players,max_players,type,status,venue_id,venue:venues(name,address,city)&limit=1`,
+      { headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` } }
+    );
+    const data = await res.json();
+    return data[0] ?? null;
+  }
+
+  // ── Affiche les données du match ─────────────────────────────────────────────
+  function renderCard(match) {
+    const card = document.getElementById('card');
+    card.classList.remove('card-skeleton');
+
+    if (!match) {
+      card.innerHTML = '<p class="error-msg">Ce match n\'existe plus ou a été annulé.</p>';
+      return;
+    }
+
+    const types = { five: { label: 'Five', emoji: '⚡' }, city: { label: 'City Stade', emoji: '🏟️' }, eleven: { label: 'Foot à 11', emoji: '⚽' } };
+    const typeInfo = types[match.type] || { label: 'Match', emoji: '⚽' };
+
+    const date = new Date(match.scheduled_at);
+    const dateStr = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const timeStr = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const venue = match.venue;
+    const location = venue ? `${venue.name}${venue.city ? ` · ${venue.city}` : ''}` : 'Terrain à confirmer';
+
+    const current = match.current_players ?? 0;
+    const max = match.max_players ?? 0;
+    const spots = max - current;
+    const pct = max > 0 ? Math.round((current / max) * 100) : 0;
+    const isFull = spots <= 0;
+    const isUrgent = !isFull && spots <= 2;
+
+    const spotsText = isFull
+      ? '🔴 Complet'
+      : isUrgent
+      ? `⚡ ${spots} place${spots > 1 ? 's' : ''} restante${spots > 1 ? 's' : ''} — dépêche-toi !`
+      : `✅ ${spots} place${spots > 1 ? 's' : ''} libre${spots > 1 ? 's' : ''}`;
+
+    card.innerHTML = `
+      <div class="tag">${typeInfo.emoji} ${typeInfo.label}</div>
+      <div class="match-title">${escapeHtml(match.title)}</div>
+      <div class="match-info">
+        <div class="info-row"><span class="info-icon">📍</span><span class="info-text">${escapeHtml(location)}</span></div>
+        <div class="info-row"><span class="info-icon">📅</span><span class="info-text">${dateStr} à ${timeStr}</span></div>
+        <div class="info-row"><span class="info-icon">👥</span><span class="info-text">${current}/${max} joueurs inscrits</span></div>
+      </div>
+      <div class="spots-bar"><div class="spots-fill" style="width:${pct}%"></div></div>
+      <div class="spots-label ${isUrgent && !isFull ? 'urgent' : ''}">${spotsText}</div>
+    `;
+
+    if (isFull) card.closest('body')?.classList.add('status-full');
+    return match;
+  }
+
+  // ── Affiche les boutons d'action ─────────────────────────────────────────────
+  function renderCTA(matchId, matchTitle) {
+    const cta = document.getElementById('cta');
+    const appSchemeUrl = `footmatch://match/${matchId}`;
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    cta.innerHTML = `
+      <a class="btn-primary" id="openBtn" href="${appSchemeUrl}">
+        <span class="emoji">⚽</span>
+        Ouvrir dans FootMatch
+      </a>
+      <div class="divider">ou télécharge l'app gratuite</div>
+      <div class="btn-stores">
+        <a class="btn-store" href="${APP_STORE_URL}" ${isAndroid ? 'style="display:none"' : ''}>
+          <span class="store-icon"></span>
+          <span><span class="store-sub">Télécharger sur</span>App Store</span>
+        </a>
+        <a class="btn-store" href="${PLAY_STORE_URL}" ${isIOS ? 'style="display:none"' : ''}>
+          <span class="store-icon">🤖</span>
+          <span><span class="store-sub">Disponible sur</span>Google Play</span>
+        </a>
+      </div>
+      <p class="hint">FootMatch est gratuit · Trouve un match en 30 secondes</p>
+    `;
+
+    // Tente d'ouvrir l'app via le scheme — si ça marche, l'app s'ouvre.
+    // Si rien ne se passe après 1.6s, l'app n'est probablement pas installée.
+    let appOpened = false;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) appOpened = true;
+    });
+    window.addEventListener('blur', () => { appOpened = true; });
+
+    document.getElementById('openBtn').addEventListener('click', e => {
+      e.preventDefault();
+      window.location.href = appSchemeUrl;
+      setTimeout(() => {
+        if (!appOpened) {
+          // App non installée → redirige vers le store approprié
+          if (isIOS) window.open(APP_STORE_URL, '_blank');
+          else if (isAndroid) window.open(PLAY_STORE_URL, '_blank');
+        }
+      }, 1600);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Mise à jour des méta OG pour les previews (WhatsApp, iMessage…) ─────────
+  function updateMetaTags(match) {
+    if (!match) return;
+    const date = new Date(match.scheduled_at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const venue = match.venue?.name ?? 'Terrain';
+    const desc = `${match.title} · ${venue} · ${date} · ${match.current_players}/${match.max_players} joueurs`;
+    document.title = `${match.title} — FootMatch ⚽`;
+    document.querySelector('meta[property="og:title"]').setAttribute('content', `${match.title} ⚽`);
+    document.querySelector('meta[property="og:description"]').setAttribute('content', desc);
+    document.querySelector('meta[name="description"]').setAttribute('content', desc);
+  }
+
+  // ── Main ─────────────────────────────────────────────────────────────────────
+  (async function main() {
+    if (!matchId) {
+      document.getElementById('card').innerHTML = '<p class="error-msg">Lien invalide — aucun match trouvé.</p>';
+      document.getElementById('cta').innerHTML = `
+        <a class="btn-primary" href="${APP_STORE_URL}">
+          <span class="emoji">⚽</span>Télécharger FootMatch
+        </a>`;
+      return;
+    }
+
+    try {
+      const match = await fetchMatch(matchId);
+      renderCard(match);
+      updateMetaTags(match);
+      renderCTA(matchId, match?.title ?? 'ce match');
+    } catch {
+      renderCard(null);
+      renderCTA(matchId, 'ce match');
+    }
+  })();
+</script>
+</body>
+</html>

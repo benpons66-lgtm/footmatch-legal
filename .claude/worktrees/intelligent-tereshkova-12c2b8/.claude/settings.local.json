@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/benpo/Documents/footmatch -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.jsx\" -o -name \"*.js\" \\\\\\) 2>/dev/null | head -30)",
+      "Bash(ls -la /c/Users/benpo/Documents/footmatch 2>/dev/null)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\benpo\\\\Documents\\\\footmatch\" -Recurse -Depth 3)",
+      "Bash(Select-Object FullName)",
+      "Bash(xargs ls -lah)"
+    ]
+  }
+}
