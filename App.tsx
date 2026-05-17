@@ -173,6 +173,8 @@ export default function App() {
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
   const [editingMatch, setEditingMatch] = useState<any>(null);
   const [matchPlayers, setMatchPlayers] = useState<any[]>([]);
+  const [matchPlayersLoading, setMatchPlayersLoading] = useState(false);
+  const [matchPlayersError, setMatchPlayersError] = useState(false);
   const [myMatches, setMyMatches] = useState<string[]>([]);
   const [myCreatedMatches, setMyCreatedMatches] = useState<any[]>([]);
   const [myRatings, setMyRatings] = useState<Record<string,number>>({});
@@ -219,6 +221,7 @@ export default function App() {
   const [matchesLoaded, setMatchesLoaded] = useState(false);
   const [liveStats, setLiveStats] = useState({ players: 0, matchesTonight: 0, matchesCompleted: 0 });
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const skeletonAnim = useRef(new Animated.Value(0.4)).current;
   const [communityMessages, setCommunityMessages] = useState<any[]>([]);
   const [communityMessage, setCommunityMessage] = useState('');
   const [sendingCommunityMsg, setSendingCommunityMsg] = useState(false);
@@ -446,7 +449,7 @@ export default function App() {
   function ensureCleanContent(content: string, context = 'ce contenu'): boolean {
     if (moderateText(content)) return true;
     Alert.alert(
-      'Contenu refuse',
+      'Contenu refusé',
       `On ne peut pas publier ${context} car il semble contenir des propos interdits. ${MODERATION_HINT}`
     );
     return false;
@@ -501,7 +504,9 @@ export default function App() {
       if (!Device.isDevice) return;
       const { granted } = await Notifications.getPermissionsAsync();
       if (!granted) return;
-      const tokenData = await Notifications.getExpoPushTokenAsync();
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: 'footmatch-app', // eas.json extra.eas.projectId — remplacer par l'UUID EAS réel avant prod
+      });
       const token = tokenData.data;
       if (token) {
         await supabase.from('profiles').update({ expo_push_token: token }).eq('id', currentUser.id);
@@ -638,14 +643,15 @@ export default function App() {
       const { error } = await supabase.from('profiles').update({ goals, assists }).eq('id', currentUser.id);
       if (error) throw error;
       setPersonalStatsDraft({ goals: String(goals), assists: String(assists) });
-      Alert.alert('Stats mises a jour', 'Tes buts et passes decisives ont ete enregistres.');
+      Alert.alert('Stats mises à jour', 'Tes buts et passes décisives ont été enregistrées.');
     } catch (e: any) {
-      Alert.alert('Configuration requise', "La base doit d'abord recevoir le script `community_profile_and_venues.sql` pour stocker ces stats.");
+      Alert.alert('Erreur', 'Impossible de sauvegarder tes stats pour le moment. Réessaie plus tard.');
     }
   }
 
   const searchRef = useRef<TextInput>(null);
   const [form, setForm] = useState({ title:'', type:'five' as 'five'|'city'|'eleven', venueId:'', venueName:'', venueAddress:'', venuePostal:'', venueCity:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true });
+  const [formErrors, setFormErrors] = useState<{venueName?:string; venueAddress?:string; venuePostal?:string}>({});
   const [citySuggestions, setCitySuggestions] = useState<{nom:string,codesPostaux:string[]}[]>([]);
   const [venueSearchOpen, setVenueSearchOpen] = useState(false);
   const [venueSearchText, setVenueSearchText] = useState('');
@@ -737,6 +743,7 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== 'chat' || !selectedMatch) return;
+    setMessages([]); // Vider les anciens messages avant de charger le nouveau chat
     loadMessages();
     const sub = supabase.channel(`chat-${selectedMatch.id}`)
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'chat_messages', filter:`match_id=eq.${selectedMatch.id}` }, () => loadMessages())
@@ -860,6 +867,22 @@ export default function App() {
     ).start();
   }
 
+  function startSkeletonAnim() {
+    skeletonAnim.stopAnimation();
+    skeletonAnim.setValue(0.4);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonAnim, { toValue: 0.8, duration: 550, useNativeDriver: true }),
+        Animated.timing(skeletonAnim, { toValue: 0.4, duration: 550, useNativeDriver: true }),
+      ])
+    ).start();
+  }
+
+  function stopSkeletonAnim() {
+    skeletonAnim.stopAnimation();
+    skeletonAnim.setValue(1);
+  }
+
   async function loadVenues() {
     const { data } = await supabase.from('venues').select('id, name, city, address, latitude, longitude, types').order('name').limit(500);
     if (data) setVenues(data);
@@ -907,7 +930,7 @@ export default function App() {
         .not('status', 'in', '(cancelled,played)');
 
       const { data } = await supabase.from('matches')
-        .select('id, title, scheduled_at, status, type, organizer_id, max_players, current_players, is_private, price_per_player, description, venue_id, venue_name, venue_address, venue_postal, venue_city, venue:venues(id, name, city, address, latitude, longitude, types)')
+        .select('id, title, scheduled_at, status, type, organizer_id, max_players, current_players, is_private, price_per_player, description, venue_id, venue_name, venue_address, venue_postal, venue_city, venue:venues(id, name, city, address, latitude, longitude, types, postal_code)')
         .neq('status','cancelled')
         .order('scheduled_at', { ascending: true })
         .limit(200);
@@ -926,19 +949,44 @@ export default function App() {
   async function loadMatchDetail(match: any) {
     // Réinitialiser immédiatement pour éviter le flash des anciennes données
     setMatchPlayers([]);
+    setMatchPlayersLoading(true);
+    setMatchPlayersError(false);
+    startSkeletonAnim();
     setSelectedMatch(match);
     setScreen('detail');
-    // Lancer les deux requêtes en parallèle pour réduire la latence d'affichage
-    const [hydratedResults, playersRes] = await Promise.all([
-      hydrateMatchesWithActualPlayers([match]),
-      supabase.from('match_players').select('*, user:profiles(id,pseudo,level,reputation_score,reputation_rank)').eq('match_id', match.id).eq('status','confirmed'),
-    ]);
-    const [hydratedMatch] = hydratedResults;
-    if (hydratedMatch) setSelectedMatch(hydratedMatch);
-    if (playersRes.data) {
+    // Une seule requête : match_players + profils en jointure.
+    // Plus besoin de hydrateMatchesWithActualPlayers([match]) en parallèle —
+    // le count exact se dérive directement de playersRes.data.length.
+    const playersRes = await supabase
+      .from('match_players')
+      .select('*, user:profiles(id,pseudo,level,reputation_score,reputation_rank)')
+      .eq('match_id', match.id)
+      .eq('status', 'confirmed');
+
+    if (playersRes.error || playersRes.data === null) {
+      // Erreur réseau : afficher l'état d'erreur, conserver le count affiché
+      setMatchPlayersLoading(false);
+      setMatchPlayersError(true);
+      stopSkeletonAnim();
+      return;
+    }
+
+    if (playersRes.data.length > 0) {
+      // Mettre à jour le count immédiatement depuis la réponse réelle
+      setSelectedMatch((prev: any) => prev ? { ...prev, current_players: playersRes.data.length } : prev);
+      // Afficher les joueurs bruts immédiatement (pseudo + level dispo dès Round 1)
+      setMatchPlayers(playersRes.data);
+      setMatchPlayersLoading(false);
+      stopSkeletonAnim();
+      // Enrichissement en arrière-plan (display_score, display_level, display_matches_played)
       const enrichedPlayers = await enrichMatchPlayers(playersRes.data);
       setMatchPlayers(enrichedPlayers);
       setSelectedMatch((prev: any) => prev ? { ...prev, current_players: enrichedPlayers.length } : prev);
+    } else {
+      // Tableau vide — aucun joueur inscrit
+      setSelectedMatch((prev: any) => prev ? { ...prev, current_players: 0 } : prev);
+      setMatchPlayersLoading(false);
+      stopSkeletonAnim();
     }
   }
 
@@ -1109,7 +1157,11 @@ export default function App() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut(); setCurrentUser(null); setScreen('login');
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setMyMatches([]);
+    setMyCreatedMatches([]);
+    setScreen('login');
   }
 
   async function updateSkill(newSkill: string) {
@@ -1182,7 +1234,7 @@ export default function App() {
     if (!currentUser) return;
     Alert.alert(
       'Supprimer mon compte',
-      'Cette action est irreversible. Ton compte et tes donnees personnelles vont etre supprimes.',
+      'Cette action est irréversible. Ton compte et tes données personnelles vont être supprimés.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -1202,7 +1254,7 @@ export default function App() {
               await supabase.auth.signOut();
               setCurrentUser(null);
               setScreen('login');
-              Alert.alert('Compte supprime', 'Ton compte FootMatch a bien ete supprime.');
+              Alert.alert('Compte supprimé', 'Ton compte FootMatch a bien été supprimé.');
             } catch (e: any) {
               Alert.alert('Erreur', e.message);
             }
@@ -1218,7 +1270,7 @@ export default function App() {
     await persistBlockedUsers(nextBlockedUsers);
     setMessages((prev) => prev.filter((item: any) => item.user_id !== userId));
     setCommunityMessages((prev) => prev.filter((item: any) => item.user_id !== userId));
-    Alert.alert('Utilisateur bloque', `${pseudo ?? 'Cet utilisateur'} ne te sera plus propose dans les discussions de cet appareil.`);
+    Alert.alert('Utilisateur bloqué', `${pseudo ?? 'Cet utilisateur'} ne te sera plus proposé dans les discussions sur cet appareil.`);
   }
 
   async function toggleBlockedUserStoreReady(userId: string, pseudo?: string | null) {
@@ -1226,7 +1278,7 @@ export default function App() {
     if (blockedUserIds.includes(userId)) {
       const nextBlockedUsers = blockedUserIds.filter((id) => id !== userId);
       await persistBlockedUsers(nextBlockedUsers);
-      Alert.alert('Utilisateur debloque', `${pseudo ?? 'Ce joueur'} peut de nouveau apparaitre.`);
+      Alert.alert('Utilisateur débloqué', `${pseudo ?? 'Ce joueur'} peut de nouveau apparaître.`);
       return;
     }
     await blockUserStoreReady(userId, pseudo);
@@ -1250,7 +1302,7 @@ export default function App() {
                 match_id: source === 'match' ? selectedMatch?.id : null,
               });
             } catch {}
-            Alert.alert('Signalement envoye', 'Merci, nous examinerons ce message sous 24h.');
+            Alert.alert('Signalement envoyé', 'Merci, nous examinerons ce message sous 24h.');
           },
         },
       ]
@@ -1261,7 +1313,7 @@ export default function App() {
     if (!currentUser || message.user_id === currentUser.id) return;
     const pseudo = message.user?.pseudo ?? 'cet utilisateur';
     Alert.alert(
-      'Moderation',
+      'Modération',
       `Que veux-tu faire avec ${pseudo} ?`,
       [
         { text: 'Annuler', style: 'cancel' },
@@ -1326,9 +1378,13 @@ export default function App() {
 
   async function handleCreateMatch() {
     if (!form.title.trim()) { Alert.alert('Erreur','Donne un nom au match'); return; }
-    if (!form.venueName.trim()) { Alert.alert('Erreur','Indique le nom du terrain'); return; }
-    if (!form.venueAddress.trim()) { Alert.alert('Erreur','Indique l\'adresse du terrain'); return; }
-    if (!form.venuePostal.trim() && !form.venueCity.trim()) { Alert.alert('Erreur','Indique le code postal ou la ville du terrain'); return; }
+    // Validation inline des champs terrain obligatoires
+    const venueErrors: {venueName?:string; venueAddress?:string; venuePostal?:string} = {};
+    if (!form.venueName.trim())   venueErrors.venueName   = 'Ce champ est obligatoire';
+    if (!form.venueAddress.trim()) venueErrors.venueAddress = 'Ce champ est obligatoire';
+    if (!form.venuePostal.trim() && !form.venueCity.trim()) venueErrors.venuePostal = 'Code postal ou ville obligatoire';
+    if (Object.keys(venueErrors).length > 0) { setFormErrors(venueErrors); return; }
+    setFormErrors({});
     if (!form.date||!form.time) { Alert.alert('Erreur','Choisis une date et heure'); return; }
     if (parseInt(form.maxPlayers) < 2) { Alert.alert('Erreur','Il faut au moins 2 joueurs'); return; }
     if (!ensureCleanContent(form.title, 'ce titre')) return;
@@ -1351,7 +1407,7 @@ export default function App() {
       scheduleMatchReminder(data.title, new Date(data.scheduled_at), data.id, true);
       setMyMatches(prev => [...prev, data.id]);
       Alert.alert('🎉 Match créé !','Ton match est en ligne !');
-      setForm({ title:'', type:'five', venueId:'', venueName:'', venueAddress:'', venuePostal:'', venueCity:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true }); setCitySuggestions([]); setVenueSearchOpen(false); setVenueSearchText(''); setAddressSuggestions([]); setAddressSearchOpen(false); setAddressSearchText('');
+      setForm({ title:'', type:'five', venueId:'', venueName:'', venueAddress:'', venuePostal:'', venueCity:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true }); setFormErrors({}); setCitySuggestions([]); setVenueSearchOpen(false); setVenueSearchText(''); setAddressSuggestions([]); setAddressSearchOpen(false); setAddressSearchText('');
       setScreen('home'); loadMatches();
     } catch (e:any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
@@ -1387,9 +1443,13 @@ export default function App() {
   async function handleUpdateMatch() {
     if (!currentUser || !editingMatch) return;
     if (!form.title.trim()) { Alert.alert('Erreur', 'Donne un nom au match'); return; }
-    if (!form.venueName.trim()) { Alert.alert('Erreur', 'Indique le nom du terrain'); return; }
-    if (!form.venueAddress.trim()) { Alert.alert('Erreur', 'Indique l\'adresse du terrain'); return; }
-    if (!form.venuePostal.trim() && !form.venueCity.trim()) { Alert.alert('Erreur', 'Indique le code postal ou la ville du terrain'); return; }
+    // Validation inline des champs terrain obligatoires
+    const venueErrors: {venueName?:string; venueAddress?:string; venuePostal?:string} = {};
+    if (!form.venueName.trim())    venueErrors.venueName    = 'Ce champ est obligatoire';
+    if (!form.venueAddress.trim()) venueErrors.venueAddress = 'Ce champ est obligatoire';
+    if (!form.venuePostal.trim() && !form.venueCity.trim()) venueErrors.venuePostal = 'Code postal ou ville obligatoire';
+    if (Object.keys(venueErrors).length > 0) { setFormErrors(venueErrors); return; }
+    setFormErrors({});
     if (!form.date || !form.time) { Alert.alert('Erreur', 'Choisis une date et heure'); return; }
     if (parseInt(form.maxPlayers) < 2) { Alert.alert('Erreur', 'Il faut au moins 2 joueurs'); return; }
     if (!ensureCleanContent(form.title, 'ce titre')) return;
@@ -1400,17 +1460,27 @@ export default function App() {
     setLoading(true);
     try {
       const { error } = await supabase.from('matches').update({
-        title: form.title.trim(), type: form.type, venue_name: form.venueName.trim(),
+        title: form.title.trim(), type: form.type,
+        venue_id: null, venue_name: form.venueName.trim(),
         venue_address: form.venueAddress.trim(), venue_postal: form.venuePostal.trim(), venue_city: form.venueCity.trim(),
         scheduled_at: parsed.toISOString(), max_players: parseInt(form.maxPlayers),
         price_per_player: form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0),
         description: form.description,
       }).eq('id', editingMatch.id);
       if (error) throw error;
-      const updated = { ...editingMatch, title: form.title.trim(), type: form.type, venue_name: form.venueName.trim(), scheduled_at: parsed.toISOString(), max_players: parseInt(form.maxPlayers), price_per_player: form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0), description: form.description };
+      const updated = {
+        ...editingMatch,
+        title: form.title.trim(), type: form.type,
+        venue_id: null, venue: null,
+        venue_name: form.venueName.trim(), venue_address: form.venueAddress.trim(),
+        venue_postal: form.venuePostal.trim(), venue_city: form.venueCity.trim(),
+        scheduled_at: parsed.toISOString(), max_players: parseInt(form.maxPlayers),
+        price_per_player: form.isFree ? 0 : Math.max(0, parseInt(form.price) || 0),
+        description: form.description,
+      };
       setSelectedMatch(updated);
       setEditingMatch(null);
-      setForm({ title: '', type: 'five', venueId: '', venueName: '', venueAddress: '', venuePostal: '', venueCity: '', date: '', time: '', maxPlayers: '10', price: '', description: '', isPrivate: false, isFree: true });
+      setForm({ title: '', type: 'five', venueId: '', venueName: '', venueAddress: '', venuePostal: '', venueCity: '', date: '', time: '', maxPlayers: '10', price: '', description: '', isPrivate: false, isFree: true }); setFormErrors({});
       Alert.alert('✅ Match modifié !', 'Les modifications ont été enregistrées.');
       setScreen('detail');
       loadMatches();
@@ -1450,7 +1520,9 @@ export default function App() {
           await supabase.from('matches').update({ current_players: newCount }).eq('id', selectedMatch.id);
           cancelMatchReminder(selectedMatch.id);
           setMyMatches(prev => prev.filter(id => id !== selectedMatch.id));
-          loadMatches(); setScreen('home');
+          setMatchPlayers(prev => prev.filter((p:any) => p.user?.id !== currentUser.id));
+          setSelectedMatch((prev:any) => prev ? { ...prev, current_players: newCount } : prev);
+          loadMatches();
         } catch (e:any) { Alert.alert('Erreur', e.message); }
       }}
     ]);
@@ -1956,6 +2028,7 @@ export default function App() {
 
   // ── CHAT ──────────────────────────────────────────────────────────────────────
   if (screen==='chat'&&selectedMatch) {
+  if (guestMode) { setShowGuestModal(true); setScreen('detail'); return null; }
   const isJoinedChat = myMatches.includes(selectedMatch.id) || selectedMatch.organizer_id === currentUser?.id;
   const playersCount = selectedMatch.current_players;
   const maxPlayers = selectedMatch.max_players;
@@ -1979,11 +2052,19 @@ export default function App() {
           style={s.chatShareAddrBtn}
           accessibilityRole="button" accessibilityLabel="Partager l'adresse du terrain"
           onPress={async () => {
-            if (venue?.address) {
-              const addr = `📍 ${venue.name} — ${venue.address}, ${venue.city}`;
-              if (currentUser && selectedMatch) {
-                await supabase.from('chat_messages').insert({ match_id: selectedMatch.id, user_id: currentUser.id, content: addr });
-              }
+            if (!venue?.address || !currentUser || !selectedMatch) return;
+            const addr = `📍 ${venue.name} — ${venue.address}, ${venue.city}`;
+            const tempId = `addr-temp-${Date.now()}`;
+            const optimistic = { id: tempId, match_id: selectedMatch.id, user_id: currentUser.id, content: addr, created_at: new Date().toISOString(), user: { id: currentUser.id, pseudo: currentUser.pseudo } };
+            setMessages((prev) => [...prev, optimistic]);
+            requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated: true }));
+            try {
+              const { data, error } = await supabase.from('chat_messages').insert({ match_id: selectedMatch.id, user_id: currentUser.id, content: addr }).select('*, user:profiles(id,pseudo)').single();
+              if (error) throw error;
+              setMessages((prev) => [...prev.filter((m:any) => m.id !== tempId), data]);
+            } catch (e:any) {
+              setMessages((prev) => prev.filter((m:any) => m.id !== tempId));
+              Alert.alert('Erreur', e instanceof Error ? e.message : 'Erreur inconnue');
             }
           }}
         >
@@ -2410,7 +2491,7 @@ export default function App() {
               <Text style={s.advancedStatsTitle}>Contribution offensive</Text>
             </View>
             <Text style={{ fontSize: 12, color: Colors.textMuted, marginBottom: 12 }}>
-              Mets a jour tes buts et passes decisives apres tes matchs joues.
+              Mets à jour tes buts et passes décisives après tes matchs joués.
             </Text>
             <View style={s.row}>
               <View style={{ flex: 1 }}>
@@ -2425,7 +2506,7 @@ export default function App() {
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.fieldLabel}>Passes decisives</Text>
+                <Text style={s.fieldLabel}>Passes décisives</Text>
                 <TextInput
                   style={s.input}
                   value={personalStatsDraft.assists}
@@ -2590,11 +2671,15 @@ export default function App() {
           </View>
           <View style={s.barBgLarge}><View style={[s.barFillLarge,{width:`${Math.min(pct*100,100)}%` as any,backgroundColor:barColor}]} /></View>
           <View style={s.infoCard}>
-            <View style={s.infoRow}><Ionicons name="location" size={20} color={Colors.green} style={{width:28}} /><View style={{flex:1}}><Text style={s.infoLabel}>Terrain</Text><Text style={s.infoValue}>{selectedMatch.venue?.name ?? selectedMatch.venue_name ?? ''}</Text>{(selectedMatch.venue?.address||selectedMatch.venue_address)?<Text style={s.infoSub}>{selectedMatch.venue?.address??selectedMatch.venue_address}{(selectedMatch.venue?.city||selectedMatch.venue_city||selectedMatch.venue_postal)?`, ${[selectedMatch.venue?.city??selectedMatch.venue_city,selectedMatch.venue_postal].filter(Boolean).join(' ')}`:''}</Text>:null}</View></View>
+            <View style={s.infoRow}><Ionicons name="location" size={20} color={Colors.green} style={{width:28}} /><View style={{flex:1}}><Text style={s.infoLabel}>Terrain</Text><Text style={s.infoValue}>{selectedMatch.venue?.name ?? selectedMatch.venue_name ?? ''}</Text>{(selectedMatch.venue?.address||selectedMatch.venue_address)?<Text style={s.infoSub}>{selectedMatch.venue?.address??selectedMatch.venue_address}{(selectedMatch.venue?.city||selectedMatch.venue_city||selectedMatch.venue_postal||selectedMatch.venue?.postal_code)?`, ${[selectedMatch.venue?.city??selectedMatch.venue_city,selectedMatch.venue_postal??selectedMatch.venue?.postal_code].filter(Boolean).join(' ')}`:''}</Text>:null}</View></View>
             <View style={s.infoRow}><Ionicons name="calendar" size={20} color={Colors.green} style={{width:28}} /><View><Text style={s.infoLabel}>Date & Heure</Text><Text style={s.infoValue}>{new Date(selectedMatch.scheduled_at).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</Text><Text style={s.infoSub}>{new Date(selectedMatch.scheduled_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</Text></View></View>
             {selectedMatch.description?<View style={s.infoRow}><Ionicons name="chatbubble" size={20} color={Colors.green} style={{width:28}} /><View style={{flex:1}}><Text style={s.infoLabel}>Description</Text><Text style={s.infoValue}>{selectedMatch.description}</Text></View></View>:null}
           </View>
-          {(isJoined||isOrganizer)&&!isPast&&<TouchableOpacity style={s.chatBtn} onPress={()=>setScreen('chat')} accessibilityRole="button" accessibilityLabel="Ouvrir le chat du match"><Ionicons name="chatbubbles" size={16} color="#000" /><Text style={s.chatBtnText}>Ouvrir le chat du match</Text></TouchableOpacity>}
+          {!isPast&&<TouchableOpacity style={s.chatBtn} onPress={()=>{
+            if (guestMode) { setShowGuestModal(true); return; }
+            if (!isJoined&&!isOrganizer) { Alert.alert('Chat du match','Rejoins le match pour accéder au chat !',[{text:'Annuler',style:'cancel'},{text:'Rejoindre',onPress:handleJoin}]); return; }
+            setScreen('chat');
+          }} accessibilityRole="button" accessibilityLabel="Ouvrir le chat du match"><Ionicons name="chatbubbles" size={16} color="#000" /><Text style={s.chatBtnText}>Ouvrir le chat du match</Text></TouchableOpacity>}
           {canRate&&(
   <View style={[s.ratingBox, myRating ? s.ratingBoxDone : null]}>
     {myRating ? (
@@ -2635,6 +2720,34 @@ export default function App() {
             <Ionicons name="people" size={15} color={Colors.green} />
             <Text style={s.sectionTitle}>Joueurs ({actualCurrentPlayers})</Text>
           </View>
+          {matchPlayersLoading && matchPlayers.length === 0 && actualCurrentPlayers > 0 && (
+            Array.from({ length: Math.min(actualCurrentPlayers, 10) }).map((_,i) => {
+              const nameWidths = [110,145,95,130,120,100,155,90,140,115];
+              return (
+                <Animated.View key={`sk-${i}`} style={[s.playerRow, { opacity: skeletonAnim }]}>
+                  <View style={[s.playerAvatar, { backgroundColor: Colors.bg3 }]} />
+                  <View style={{ flex:1, gap:5 }}>
+                    <View style={{ width: nameWidths[i % nameWidths.length], height: 13, backgroundColor: Colors.bg3, borderRadius: 4 }} />
+                    <View style={{ width: 72, height: 11, backgroundColor: Colors.bg3, borderRadius: 4 }} />
+                  </View>
+                </Animated.View>
+              );
+            })
+          )}
+          {matchPlayersError && matchPlayers.length === 0 && (
+            <View style={{ alignItems: 'center', paddingVertical: 20, gap: 10 }}>
+              <Text style={{ color: Colors.textMuted, fontSize: 14, textAlign: 'center' }}>Impossible de charger les joueurs</Text>
+              <TouchableOpacity
+                onPress={() => { if (selectedMatch) loadMatchDetail(selectedMatch); }}
+                style={{ paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border }}
+                accessibilityRole="button" accessibilityLabel="Réessayer de charger les joueurs">
+                <Text style={{ color: Colors.green, fontSize: 13, fontWeight: '600' }}>Réessayer</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {!matchPlayersLoading && !matchPlayersError && matchPlayers.length === 0 && (
+            <Text style={{ color: Colors.textMuted, textAlign: 'center', paddingVertical: 20, fontSize: 14 }}>Aucun joueur inscrit pour le moment</Text>
+          )}
           {matchPlayers.map((p:any,i:number)=>(
             <TouchableOpacity key={p.user?.id??i} style={s.playerRow} activeOpacity={0.75}
               onPress={() => { if (p.user?.id && p.user.id !== currentUser?.id) { seedPlayerCache({ id: p.user.id, pseudo: p.user.pseudo ?? 'Joueur', reputation: p.user.reputation_score ?? 0, matchesPlayed: p.user.display_matches_played ?? 0 }); setSelectedPlayer(p.user.id); setScreen('player_profile'); } }}
@@ -2980,16 +3093,18 @@ export default function App() {
             </View>
             <View style={cs.pitchMini}>
               <View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:8}}><Ionicons name="location-outline" size={13} color={Colors.textMuted} /><Text style={cs.pitchMiniLabel}>Localisation du match</Text></View>
-              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)',marginBottom:10}]}>
-                <Ionicons name="home-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
-                <TextInput style={cs.inputField} value={form.venueName} onChangeText={v=>setForm(f=>({...f,venueName:v}))}
+              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor: formErrors.venueName ? '#FF6B6B' : 'rgba(0,255,135,0.2)',marginBottom: formErrors.venueName ? 4 : 10}]}>
+                <Ionicons name="home-outline" size={16} color={formErrors.venueName ? '#FF6B6B' : Colors.textMuted} style={{marginRight:4}}/>
+                <TextInput style={cs.inputField} value={form.venueName} onChangeText={v=>{setForm(f=>({...f,venueName:v}));if(formErrors.venueName)setFormErrors(e=>({...e,venueName:undefined}));}}
                   placeholder="Nom du complexe / terrain" placeholderTextColor={Colors.textMuted}/>
               </View>
-              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)',marginBottom:10}]}>
-                <Ionicons name="map-outline" size={16} color={Colors.textMuted} style={{marginRight:4}}/>
-                <TextInput style={cs.inputField} value={form.venueAddress} onChangeText={v=>setForm(f=>({...f,venueAddress:v}))}
+              {formErrors.venueName ? <Text style={{fontSize:11,color:'#FF6B6B',marginBottom:8,marginLeft:4}}>{formErrors.venueName}</Text> : null}
+              <View style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor: formErrors.venueAddress ? '#FF6B6B' : 'rgba(0,255,135,0.2)',marginBottom: formErrors.venueAddress ? 4 : 10}]}>
+                <Ionicons name="map-outline" size={16} color={formErrors.venueAddress ? '#FF6B6B' : Colors.textMuted} style={{marginRight:4}}/>
+                <TextInput style={cs.inputField} value={form.venueAddress} onChangeText={v=>{setForm(f=>({...f,venueAddress:v}));if(formErrors.venueAddress)setFormErrors(e=>({...e,venueAddress:undefined}));}}
                   placeholder="Adresse du terrain" placeholderTextColor={Colors.textMuted}/>
               </View>
+              {formErrors.venueAddress ? <Text style={{fontSize:11,color:'#FF6B6B',marginBottom:8,marginLeft:4}}>{formErrors.venueAddress}</Text> : null}
               {venueSearchOpen ? (
                 <View>
                   {citySuggestions.length > 0 && (
@@ -3026,13 +3141,14 @@ export default function App() {
                   <Ionicons name="pencil-outline" size={14} color={Colors.textMuted}/>
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor:'rgba(0,255,135,0.2)'}]}
+                <TouchableOpacity style={[cs.inputBox,{backgroundColor:'rgba(0,0,0,0.35)',borderColor: formErrors.venuePostal ? '#FF6B6B' : 'rgba(0,255,135,0.2)'}]}
                   onPress={()=>{ setVenueSearchText(''); setVenueSearchOpen(true); }}>
-                  <Ionicons name="location-outline" size={16} color={Colors.textMuted} style={{marginRight:8}}/>
+                  <Ionicons name="location-outline" size={16} color={formErrors.venuePostal ? '#FF6B6B' : Colors.textMuted} style={{marginRight:8}}/>
                   <Text style={{color:Colors.textMuted,fontSize:14,flex:1}}>Code postal / Ville</Text>
                   <Ionicons name="chevron-down-outline" size={14} color={Colors.textMuted}/>
                 </TouchableOpacity>
               )}
+              {formErrors.venuePostal ? <Text style={{fontSize:11,color:'#FF6B6B',marginTop:6,marginLeft:4}}>{formErrors.venuePostal}</Text> : null}
             </View>
           </View>
 
@@ -3544,7 +3660,7 @@ export default function App() {
                   <View style={{flexDirection:'row', alignItems:'center', gap:12, marginBottom:10}}>
                     <View style={{flexDirection:'row', alignItems:'center', gap:4}}>
                       <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-                      <Text style={s.cardInfoText2}>{m.venue?.name ?? m.venue_name ?? 'Terrain'}{m.venue_postal?` · ${m.venue_postal}`:''}{dist?` · ${dist}km`:''}</Text>
+                      <Text style={s.cardInfoText2}>{m.venue?.name ?? m.venue_name ?? 'Terrain'}{(m.venue_postal ?? m.venue?.postal_code) ? ` · ${m.venue_postal ?? m.venue?.postal_code}` : ''}{dist ? ` · ${dist.toFixed(1)}km` : ''}</Text>
                     </View>
                     <View style={{flexDirection:'row', alignItems:'center', gap:4}}>
                       <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
@@ -3850,8 +3966,8 @@ const s = StyleSheet.create({
   shareDetailBtnText:{ fontSize:12, fontWeight:'800', color:'#000' },
   shareNudge:        { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingHorizontal:16, paddingVertical:10, marginBottom:12, borderWidth:1, borderColor:Colors.greenBorder, justifyContent:'center' },
   shareNudgeText:    { fontSize:13, fontWeight:'700', color:Colors.green, flex:1, textAlign:'center' },
-  shareProfileBtn:   { flexDirection:'row', alignItems:'center', gap:10, marginHorizontal:Spacing.xl, marginBottom:Spacing.lg, backgroundColor:'rgba(255,255,255,0.08)', borderRadius:Radius.full, paddingVertical:14, paddingHorizontal:24, justifyContent:'center', borderWidth:1.5, borderColor:'rgba(255,255,255,0.20)', shadowColor:'#fff', shadowOpacity:0.05, shadowRadius:8 },
-  shareProfileBtnText: { fontSize:15, fontWeight:'800', color:Colors.text },
+  shareProfileBtn:   { flexDirection:'row', alignItems:'center', gap:10, marginHorizontal:Spacing.xl, marginBottom:Spacing.lg, backgroundColor:'rgba(0,230,118,0.10)', borderRadius:Radius.full, paddingVertical:15, paddingHorizontal:24, justifyContent:'center', borderWidth:1.5, borderColor:'rgba(0,230,118,0.35)', shadowColor:Colors.green, shadowOpacity:0.12, shadowRadius:10 },
+  shareProfileBtnText: { fontSize:15, fontWeight:'800', color:Colors.green },
 
   searchHeader:      { flexDirection:'row', alignItems:'center', paddingHorizontal:Spacing.xl, paddingTop:56, paddingBottom:14, borderBottomWidth:1, borderBottomColor:Colors.border, gap:12 },
   searchInput:       { flex:1, backgroundColor:Colors.bg3, borderRadius:Radius.full, paddingHorizontal:16, paddingVertical:12, color:Colors.text, fontSize:15, borderWidth:1, borderColor:'rgba(255,255,255,0.12)' },
@@ -4061,7 +4177,7 @@ const s = StyleSheet.create({
   orgaCTA:           { backgroundColor:Colors.greenDim, borderRadius:Radius.full, paddingVertical:18, alignItems:'center', justifyContent:'center', flexDirection:'row', gap:8, flex:1, borderWidth:1, borderColor:Colors.greenBorder },
   orgaCTAText:       { color:Colors.green, fontWeight:'700', fontSize:15 },
 
-  profileHeader:     { alignItems:'center', padding:Spacing['2xl'], borderBottomWidth:1, borderBottomColor:Colors.border },
+  profileHeader:     { alignItems:'center', padding:Spacing['2xl'], borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.10)', backgroundColor:'rgba(255,255,255,0.03)' },
   profileAvatarWrap: { width:90, height:90, borderRadius:45, borderWidth:2.5, alignItems:'center', justifyContent:'center', marginBottom:12, backgroundColor:Colors.bg3, position:'relative' },
   profileAvatarPhoto:{ width:85, height:85, borderRadius:43 },
   profileAvatarEmoji:{ fontSize:42 },
@@ -4090,10 +4206,10 @@ const s = StyleSheet.create({
   competitionsTeaserBadgeText:{ fontSize:11, fontWeight:'700', color:Colors.textMuted, letterSpacing:0.5 },
 
   statsGrid:         { flexDirection:'row', flexWrap:'wrap', padding:Spacing.xl, gap:10 },
-  statCard:          { width:'47%', backgroundColor:'rgba(255,255,255,0.05)', borderRadius:Radius.lg, padding:14, borderWidth:1, borderColor:'rgba(255,255,255,0.10)', alignItems:'center' },
+  statCard:          { width:'47%', backgroundColor:'rgba(255,255,255,0.08)', borderRadius:Radius.lg, padding:16, borderWidth:1, borderColor:'rgba(255,255,255,0.15)', alignItems:'center' },
   statCardN:         { fontSize:32, fontWeight:'900', color:Colors.green },
   statCardL:         { fontSize:11, color:Colors.textMuted, textTransform:'uppercase', textAlign:'center', marginTop:3 },
-  advancedStats:     { marginHorizontal:Spacing.xl, backgroundColor:'rgba(255,255,255,0.04)', borderRadius:Radius.lg, padding:Spacing.xl, borderWidth:1, borderColor:'rgba(255,255,255,0.10)', marginBottom:Spacing.xl },
+  advancedStats:     { marginHorizontal:Spacing.xl, backgroundColor:'rgba(255,255,255,0.07)', borderRadius:Radius.lg, padding:Spacing.xl, borderWidth:1, borderColor:'rgba(255,255,255,0.14)', marginBottom:Spacing.xl },
   advancedStatsTitle:{ fontSize:16, fontWeight:'900', color:Colors.text, textTransform:'uppercase' },
   statRow:           { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:10, borderBottomWidth:1, borderBottomColor:Colors.borderSubtle },
   statRowLabel:      { fontSize:13, color:Colors.textMuted },

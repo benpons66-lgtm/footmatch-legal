@@ -429,4 +429,17 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  sendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendBtnOff: {
+    backgroundColor: Colors.bg3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
 });

@@ -491,8 +491,6 @@ const s = StyleSheet.create({
   meBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: Colors.greenDim, borderWidth: 1, borderColor: Colors.green + '40' },
   meText:  { fontSize: 10, fontWeight: '700', color: Colors.green },
 
-  count: { fontSize: 11, color: Colors.textMuted, marginHorizontal: Spacing.xl, marginBottom: 6, fontWeight: '600' },
-
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
   emptyText:  { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },

@@ -53,3 +53,19 @@ eas-build-local-nodejs/
 # generated native folders
 /ios
 /android
+
+# EAS local build output
+build/
+
+# Firebase / Google Sign-In
+google-services.json
+GoogleService-Info.plist
+
+# Claude Code internals
+.claude/worktrees/
+.claude/skills/
+
+# Rapports de session (internes)
+AUDIT_*.md
+AUDIT_*.docx
+RAPPORT_*.md

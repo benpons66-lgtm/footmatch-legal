@@ -125,10 +125,10 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
 
   async function handleSharePlayer() {
     try {
-      const profileLink = `https://footmatch.app/joueur/${profile.id}`;
+      const profileLink = `https://footmatch.app/joueur/${profile!.id}`;
       await Share.share({
-        message: `Découvre ${profile.pseudo} sur FootMatch !\n⚽ ${rank} · ${score} pts\n\n👉 ${profileLink}\n🆓 Télécharge FootMatch — trouve un match en 30 secondes !`,
-        title: `Profil FootMatch — ${profile.pseudo}`,
+        message: `Découvre ${profile!.pseudo} sur FootMatch !\n⚽ ${rank} · ${score} pts\n\n👉 ${profileLink}\n🆓 Télécharge FootMatch — trouve un match en 30 secondes !`,
+        title: `Profil FootMatch — ${profile!.pseudo}`,
         url: profileLink,
       });
     } catch {
@@ -269,10 +269,18 @@ const s = StyleSheet.create({
   dispoRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dispoJour:   { fontSize: 13, fontWeight: '800', color: Colors.green, width: 34 },
   dispoCren:   { fontSize: 13, color: Colors.textMuted, fontWeight: '600' },
-  // Styles hérités non supprimés (gardés pour éviter tout crash si référencés ailleurs)
-  rankCard: { flexDirection: 'row', alignItems: 'center', gap: 14, width: '100%', borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 1 },
-  rankName: { fontSize: 16, fontWeight: '900', textTransform: 'uppercase' },
-  rankScore: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  backBtnCenter: { marginTop: 24, backgroundColor: Colors.greenDim, borderRadius: Radius.full, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: Colors.green + '40' },
-  backBtnCenterText: { color: Colors.green, fontWeight: '700' },
+  // ── Boutons d'action (autre joueur) ────────────────────────────────────────
+  inviteBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.green, borderRadius: Radius.full, paddingVertical: 14, paddingHorizontal: 24, width: '100%' },
+  inviteBtnText:    { fontSize: 15, fontWeight: '800', color: '#000' },
+  actionRow:        { flexDirection: 'row', gap: 10, width: '100%' },
+  shareBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.bg3, borderRadius: Radius.full, paddingVertical: 12, borderWidth: 1, borderColor: Colors.greenBorder },
+  shareBtnText:     { fontSize: 14, fontWeight: '700', color: Colors.green },
+  blockBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.bg3, borderRadius: Radius.full, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(255,138,138,0.25)' },
+  blockBtnActive:   { borderColor: Colors.greenBorder, backgroundColor: Colors.greenDim },
+  blockBtnText:     { fontSize: 14, fontWeight: '700', color: '#FF8A8A' },
+  blockBtnTextActive: { color: Colors.green },
+
+  // Ecran joueur introuvable
+  backBtnCenter:      { marginTop: 24, backgroundColor: Colors.greenDim, borderRadius: Radius.full, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(0,230,118,0.40)' },
+  backBtnCenterText:  { color: Colors.green, fontWeight: '700' },
 });

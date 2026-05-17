@@ -233,3 +233,5 @@ export function useChat(
     reportMessage,
   };
 }
+  };
+}
