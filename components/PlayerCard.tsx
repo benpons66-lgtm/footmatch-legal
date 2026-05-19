@@ -21,7 +21,7 @@ export const CARD_SCORES: Record<string, number> = {
   'GOAT': 120,
 };
 
-// ─── Labels skill ─────────────────────────────────────────────────────────────
+// ─── Labels & emojis skill ────────────────────────────────────────────────────
 const SKILL_LABELS: Record<string, string> = {
   vitesse:   'Vitesse',
   dribbles:  'Dribbles',
@@ -33,15 +33,15 @@ const SKILL_LABELS: Record<string, string> = {
   vision:    'Vision',
 };
 
-const SKILL_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  vitesse:   'flash-outline',
-  dribbles:  'git-branch-outline',
-  physique:  'barbell-outline',
-  '2pieds':  'swap-horizontal-outline',
-  technique: 'trophy-outline',
-  tete:      'ellipse-outline',
-  gardien:   'shield-checkmark-outline',
-  vision:    'eye-outline',
+const SKILL_EMOJIS: Record<string, string> = {
+  vitesse:   '⚡',
+  dribbles:  '🪄',
+  physique:  '💪',
+  '2pieds':  '🦶',
+  technique: '🎯',
+  tete:      '🦅',
+  gardien:   '🧤',
+  vision:    '🔭',
 };
 
 // ─── Tier / grade ─────────────────────────────────────────────────────────────
@@ -90,6 +90,7 @@ interface Props {
   stats: PlayerStats;
   avatarId?: string;
   onPress?: () => void;
+  onSkillPress?: () => void;
   size?: 'full' | 'mini';
   disableAnimations?: boolean;
   scale?: number;
@@ -98,7 +99,7 @@ interface Props {
 // ─── Composant ────────────────────────────────────────────────────────────────
 export default function PlayerCard({
   pseudo, rank, score, stats,
-  onPress, size = 'full', disableAnimations = false, scale: scaleProp = 1,
+  onPress, onSkillPress, size = 'full', disableAnimations = false, scale: scaleProp = 1,
 }: Props) {
   const tierInfo  = getTierDisplay(rank);
   const accent    = TIER_ACCENT[tierInfo.tier] ?? TIER_ACCENT['DISTRICT'];
@@ -130,7 +131,7 @@ export default function PlayerCard({
   const fillWidth = progWidth * prog;
 
   const skillLabel = stats.skill ? (SKILL_LABELS[stats.skill] ?? stats.skill) : null;
-  const skillIcon  = stats.skill ? (SKILL_ICONS[stats.skill]  ?? 'flash-outline') : 'flash-outline';
+  const skillEmoji = stats.skill ? (SKILL_EMOJIS[stats.skill] ?? '⚡') : null;
 
   const cardContent = (
     <View style={{ width: cW, paddingTop: m * 36, alignItems: 'center' }}>
@@ -259,16 +260,23 @@ export default function PlayerCard({
             </View>
 
             {/* Skill */}
-            <View style={[s.statRow, { borderTopColor: accent.primary + '12' }]}>
+            <TouchableOpacity
+              style={[s.statRow, { borderTopColor: accent.primary + '12' }]}
+              onPress={onSkillPress}
+              disabled={!onSkillPress}
+              activeOpacity={onSkillPress ? 0.7 : 1}
+              accessibilityRole={onSkillPress ? 'button' : 'none'}
+              accessibilityLabel="Choisir mon skill principal"
+            >
               <View style={[s.statIco, { borderColor: accent.primary + '30', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
-                <Ionicons name={skillIcon} size={m * 16} color={accent.primary} />
+                <Text style={{ fontSize: m * 16 }}>{skillEmoji ?? '⚡'}</Text>
               </View>
               <View style={s.statText}>
                 <Text style={[s.statName, { fontSize: m * 13 }]}>Skill principal</Text>
-                <Text style={[s.statSub,  { fontSize: m * 10 }]}>Caractéristique forte</Text>
+                <Text style={[s.statSub,  { fontSize: m * 10 }]}>{onSkillPress ? 'Appuie pour changer' : 'Caractéristique forte'}</Text>
               </View>
               <Text style={[s.skillVal, { fontSize: m * 13, color: accent.primary }]}>{skillLabel ?? '—'}</Text>
-            </View>
+            </TouchableOpacity>
 
             {/* Notes */}
             <View style={[s.statRow, { borderTopColor: accent.primary + '12' }]}>

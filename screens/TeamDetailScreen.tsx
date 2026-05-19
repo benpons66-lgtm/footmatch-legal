@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors, Spacing, Radius } from '../constants/theme';
 import type { Team, TeamMember, TeamChallenge } from '../types';
+import Copyright from '../components/Copyright';
 import { COMPETITION_FORMATS } from '../types';
 
 interface Props {
@@ -383,6 +384,7 @@ export default function TeamDetailScreen({ team, currentUserId, onBack }: Props)
                 })}
               </View>
             )}
+            <Copyright />
           </ScrollView>
         )}
 
@@ -921,8 +923,5 @@ const styles = StyleSheet.create({
   },
   scoreSep: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.textMuted,
-    marginTop: 28,
-  },
+  }
 });

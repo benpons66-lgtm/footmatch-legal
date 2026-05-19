@@ -1,40 +1,59 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Dimensions,
-  Animated, StatusBar, Platform,
+  Animated, StatusBar, Platform, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius } from '../constants/theme';
 
-const { width: W, height: H } = Dimensions.get('window');
+const { width: W } = Dimensions.get('window');
 
-const SLIDES = [
+type IllustrationKey = 'logo' | 'people' | 'trophy';
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const SLIDES: {
+  illustration: IllustrationKey;
+  badge:    string;
+  title1:   string;
+  title2:   string;
+  sub:      string;
+  stat:     string;
+  btnLabel: string;
+  btnIcon:  IoniconName;
+  accent:   string;
+}[] = [
   {
-    icon:    'football' as const,
-    iconBg:  Colors.green,
-    badge:   '⚡ 30 secondes pour jouer',
-    title:   'Trouve ton match\nmaintenant',
-    sub:     'Five, City Stade, Foot à 11 — filtre par niveau, distance et type. Plus jamais de dimanche sans ballon.',
-    accent:  Colors.green,
-    stat:    '🟢 +1 000 joueurs actifs',
+    illustration: 'logo',
+    badge:    '📍 PRÈS DE TOI',
+    title1:   'Trouve ton',
+    title2:   'match maintenant',
+    sub:      'Five, city stade, foot à 11 — filtre par niveau, distance et type.',
+    stat:     '⚡ Match en 30 secondes',
+    btnLabel: 'Trouver un match',
+    btnIcon:  'arrow-forward',
+    accent:   Colors.green,
   },
   {
-    icon:    'people' as const,
-    iconBg:  Colors.greenLight,
-    badge:   '👥 Communauté sérieuse',
-    title:   'Les vrais joueurs\nsont ici',
-    sub:     'Système de réputation unique. Notes, classements, championnats — chaque match compte pour ton rang.',
-    accent:  Colors.greenLight,
-    stat:    '🏆 15 championnats en cours',
+    illustration: 'people',
+    badge:    '👥 COMMUNAUTÉ SÉRIEUSE',
+    title1:   'Joue avec des',
+    title2:   'joueurs fiables',
+    sub:      'Notes, niveaux et réputation pour trouver les bons joueurs à chaque match.',
+    stat:     '💬 Chat en direct',
+    btnLabel: 'Continuer',
+    btnIcon:  'arrow-forward',
+    accent:   Colors.greenLight,
   },
   {
-    icon:    'trophy' as const,
-    iconBg:  Colors.green,
-    badge:   '🚀 100% gratuit, toujours',
-    title:   'Rookie → Légende\nc\'est ton histoire',
-    sub:     'Inscris-toi en 20 secondes. Aucune CB, aucun abonnement. FootMatch, c\'est le terrain dans ta poche.',
-    accent:  Colors.green,
-    stat:    '⚽ Rejoins la communauté',
+    illustration: 'trophy',
+    badge:    '🚀 100% GRATUIT',
+    title1:   'Le terrain dans',
+    title2:   'ta poche',
+    sub:      'Inscris-toi en 20 secondes. Gratuit. Sans abonnement. Aucune CB, aucun engagement.',
+    stat:     '⚽ Rejoins la communauté',
+    btnLabel: 'Commencer gratuitement',
+    btnIcon:  'rocket',
+    accent:   Colors.green,
   },
 ];
 
@@ -47,32 +66,28 @@ interface Props {
 export default function OnboardingScreen({ onStart, onLogin, onGuest }: Props) {
   const [current, setCurrent] = useState(0);
 
-  const fadeAnim   = useRef(new Animated.Value(0)).current;
-  const slideAnim  = useRef(new Animated.Value(40)).current;
-  const iconScale  = useRef(new Animated.Value(0)).current;
-  const iconRotate = useRef(new Animated.Value(0)).current;
-  const pulseAnim  = useRef(new Animated.Value(1)).current;
-  const counterAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
+  const iconScale = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   function animateIn(fromRight = true) {
     fadeAnim.setValue(0);
     slideAnim.setValue(fromRight ? 60 : -60);
     iconScale.setValue(0);
-    iconRotate.setValue(fromRight ? 0.3 : -0.3);
 
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, tension: 80, friction: 10, useNativeDriver: true }),
       Animated.spring(iconScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
-      Animated.spring(iconRotate, { toValue: 0, tension: 80, friction: 10, useNativeDriver: true }),
     ]).start();
   }
 
   function startPulse() {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.08, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.06, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 1000, useNativeDriver: true }),
       ])
     ).start();
   }
@@ -80,7 +95,7 @@ export default function OnboardingScreen({ onStart, onLogin, onGuest }: Props) {
   useEffect(() => {
     animateIn(true);
     startPulse();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function goTo(index: number) {
     const forward = index > current;
@@ -94,16 +109,43 @@ export default function OnboardingScreen({ onStart, onLogin, onGuest }: Props) {
   }
 
   const slide = SLIDES[current];
-  const isLast = current === SLIDES.length - 1;
 
-  const rotation = iconRotate.interpolate({ inputRange: [-1, 1], outputRange: ['-20deg', '20deg'] });
+  function renderIllustration() {
+    if (slide.illustration === 'logo') {
+      return (
+        <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+          <Image
+            source={require('../assets/logo footmatch transparent.png')}
+            style={s.logoImg}
+            resizeMode="contain"
+          />
+        </Animated.View>
+      );
+    }
+    if (slide.illustration === 'people') {
+      return (
+        <Animated.View style={[s.iconWrap, { transform: [{ scale: iconScale }] }]}>
+          <Ionicons name="people" size={72} color={slide.accent} />
+          <View style={[s.shieldBadge, { backgroundColor: slide.accent }]}>
+            <Ionicons name="star" size={14} color="#000" />
+          </View>
+        </Animated.View>
+      );
+    }
+    // trophy
+    return (
+      <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+        <Ionicons name="trophy" size={80} color={slide.accent} />
+      </Animated.View>
+    );
+  }
 
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" />
 
       {/* Background glow */}
-      <Animated.View style={[s.glow, { backgroundColor: slide.accent + '18', transform: [{ scale: pulseAnim }] }]} />
+      <Animated.View style={[s.glow, { backgroundColor: slide.accent + '15', transform: [{ scale: pulseAnim }] }]} />
 
       {/* Skip */}
       {current < SLIDES.length - 1 && (
@@ -115,35 +157,31 @@ export default function OnboardingScreen({ onStart, onLogin, onGuest }: Props) {
 
       {/* Illustration */}
       <Animated.View style={[s.illustrationWrap, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        <Animated.View style={[s.iconCircleOuter, { borderColor: slide.accent + '30', transform: [{ scale: pulseAnim }] }]}>
-          <Animated.View style={[s.iconCircleInner, { backgroundColor: slide.accent + '20', borderColor: slide.accent + '50', transform: [{ scale: iconScale }, { rotate: rotation }] }]}>
-            <Ionicons name={slide.icon} size={64} color={slide.accent} />
-          </Animated.View>
+        <Animated.View style={[s.appIcon, { borderColor: slide.accent + '50', transform: [{ scale: pulseAnim }] }]}>
+          {renderIllustration()}
         </Animated.View>
-
-        {/* Floating chips around the icon */}
-        <View style={[s.chip, s.chipTL, { borderColor: slide.accent + '40' }]}>
-          <Ionicons name="location" size={12} color={slide.accent} />
-          <Text style={[s.chipText, { color: slide.accent }]}>Près de toi</Text>
-        </View>
-        <View style={[s.chip, s.chipBR, { borderColor: slide.accent + '40' }]}>
-          <Ionicons name="people" size={12} color={slide.accent} />
-          <Text style={[s.chipText, { color: slide.accent }]}>+2.4k</Text>
-        </View>
       </Animated.View>
 
       {/* Content */}
       <Animated.View style={[s.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        <View style={[s.badge, { backgroundColor: slide.accent + '15', borderColor: slide.accent + '35' }]}>
+        {/* Badge */}
+        <View style={[s.badge, { backgroundColor: slide.accent + '15', borderColor: slide.accent + '40' }]}>
           <Text style={[s.badgeText, { color: slide.accent }]}>{slide.badge}</Text>
         </View>
-        <Text style={s.title}>{slide.title}</Text>
+
+        {/* Titre 2 lignes */}
+        <Text style={s.title}>
+          {slide.title1}{'\n'}
+          <Text style={[s.title, { color: slide.accent }]}>{slide.title2}</Text>
+        </Text>
+
+        {/* Sous-titre */}
         <Text style={s.sub}>{slide.sub}</Text>
-        {'stat' in slide && slide.stat && (
-          <View style={s.statPill}>
-            <Text style={[s.statPillText, { color: slide.accent }]}>{slide.stat}</Text>
-          </View>
-        )}
+
+        {/* Stat pill */}
+        <View style={[s.statPill, { borderColor: slide.accent + '30' }]}>
+          <Text style={[s.statPillText, { color: slide.accent }]}>{slide.stat}</Text>
+        </View>
       </Animated.View>
 
       {/* Dots */}
@@ -162,13 +200,14 @@ export default function OnboardingScreen({ onStart, onLogin, onGuest }: Props) {
           onPress={next}
           activeOpacity={0.85}
         >
-          <Text style={s.ctaBtnText}>{isLast ? 'Commencer maintenant' : 'Suivant'}</Text>
-          <Ionicons name={isLast ? 'rocket' : 'arrow-forward'} size={18} color="#000" />
+          <Text style={s.ctaBtnText}>{slide.btnLabel}</Text>
+          <Ionicons name={slide.btnIcon} size={18} color="#000" />
         </TouchableOpacity>
 
         <TouchableOpacity style={s.loginBtn} onPress={onLogin} activeOpacity={0.7}>
           <Text style={s.loginText}>J'ai déjà un compte →</Text>
         </TouchableOpacity>
+
         {onGuest && (
           <TouchableOpacity style={s.guestBtn} onPress={onGuest} activeOpacity={0.5}>
             <Ionicons name="eye-outline" size={13} color="rgba(255,255,255,0.2)" />
@@ -182,28 +221,32 @@ export default function OnboardingScreen({ onStart, onLogin, onGuest }: Props) {
 
 const s = StyleSheet.create({
   container:        { flex:1, backgroundColor:'#080C08', alignItems:'center', paddingHorizontal:28, paddingTop: Platform.OS==='ios'?60:48, paddingBottom: Platform.OS==='ios'?44:28 },
-  glow:             { position:'absolute', width:W*1.2, height:W*1.2, borderRadius:W*0.6, top:-W*0.3, alignSelf:'center', pointerEvents:'none' },
+  glow:             { position:'absolute', width:W*1.4, height:W*1.4, borderRadius:W*0.7, top:-W*0.4, alignSelf:'center', pointerEvents:'none' },
   skip:             { position:'absolute', top: Platform.OS==='ios'?56:40, right:24, flexDirection:'row', alignItems:'center', gap:5, zIndex:10 },
   skipText:         { color:Colors.textMuted, fontSize:14, fontWeight:'500' },
 
+  // Illustration — cadre style app icon
   illustrationWrap: { flex:1, alignItems:'center', justifyContent:'center', width:'100%' },
-  iconCircleOuter:  { width:220, height:220, borderRadius:110, borderWidth:1.5, alignItems:'center', justifyContent:'center' },
-  iconCircleInner:  { width:150, height:150, borderRadius:75, borderWidth:1.5, alignItems:'center', justifyContent:'center' },
-  chip:             { position:'absolute', flexDirection:'row', alignItems:'center', gap:5, backgroundColor:'rgba(255,255,255,0.04)', borderWidth:1, borderRadius:Radius.full, paddingHorizontal:10, paddingVertical:5 },
-  chipTL:           { top:30, left:0 },
-  chipBR:           { bottom:30, right:0 },
-  chipText:         { fontSize:12, fontWeight:'700' },
+  appIcon:          { width:200, height:200, borderRadius:44, backgroundColor:'rgba(0,230,118,0.06)', borderWidth:1.5, alignItems:'center', justifyContent:'center', shadowColor:Colors.green, shadowRadius:24, shadowOpacity:0.25, elevation:8 },
+  logoImg:          { width:150, height:150 },
+  iconWrap:         { alignItems:'center', justifyContent:'center' },
+  shieldBadge:      { position:'absolute', bottom:-6, right:-12, width:28, height:28, borderRadius:14, alignItems:'center', justifyContent:'center', borderWidth:2, borderColor:'#080C08' },
 
-  content:          { width:'100%', alignItems:'center', marginBottom:28 },
-  badge:            { flexDirection:'row', alignItems:'center', gap:6, borderWidth:1, borderRadius:Radius.full, paddingHorizontal:14, paddingVertical:6, marginBottom:20 },
-  badgeText:        { fontSize:13, fontWeight:'700' },
-  title:            { fontSize:34, fontWeight:'900', color:Colors.text, textAlign:'center', lineHeight:40, letterSpacing:-0.5, marginBottom:14 },
-  sub:              { fontSize:15, color:Colors.textMuted, textAlign:'center', lineHeight:22, maxWidth:300 },
+  // Content
+  content:          { width:'100%', alignItems:'center', marginBottom:24 },
+  badge:            { borderWidth:1, borderRadius:Radius.full, paddingHorizontal:16, paddingVertical:7, marginBottom:18 },
+  badgeText:        { fontSize:12, fontWeight:'800', letterSpacing:1 },
+  title:            { fontSize:36, fontWeight:'900', color:Colors.text, textAlign:'center', lineHeight:42, letterSpacing:-0.5, marginBottom:12 },
+  sub:              { fontSize:15, color:Colors.textMuted, textAlign:'center', lineHeight:22, maxWidth:300, marginBottom:4 },
+  statPill:         { marginTop:12, backgroundColor:'rgba(255,255,255,0.04)', borderRadius:Radius.full, paddingHorizontal:18, paddingVertical:8, borderWidth:1 },
+  statPillText:     { fontSize:13, fontWeight:'700' },
 
-  dots:             { flexDirection:'row', gap:8, marginBottom:28 },
+  // Dots
+  dots:             { flexDirection:'row', gap:8, marginBottom:24 },
   dot:              { width:8, height:8, borderRadius:4, backgroundColor:'rgba(255,255,255,0.15)' },
   dotActive:        { width:24, borderRadius:4 },
 
+  // CTA
   cta:              { width:'100%', gap:12 },
   ctaBtn:           { borderRadius:Radius.full, paddingVertical:17, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10 },
   ctaBtnText:       { fontSize:16, fontWeight:'900', color:'#000', letterSpacing:0.3 },
@@ -211,6 +254,4 @@ const s = StyleSheet.create({
   loginText:        { fontSize:14, color:Colors.textMuted, fontWeight:'500' },
   guestBtn:         { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:6, paddingVertical:8 },
   guestText:        { fontSize:12, color:'rgba(255,255,255,0.2)' },
-  statPill:         { marginTop: 8, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: Radius.full, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
-  statPillText:     { fontSize: 13, fontWeight: '700' },
 });

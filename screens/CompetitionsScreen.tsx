@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors, Spacing, Radius } from '../constants/theme';
+import Copyright from '../components/Copyright';
 import type {
   Team, Cup, Championship, CompetitionFormat, WeeklyRankEntry,
 } from '../types';
@@ -524,6 +525,7 @@ function ChampionshipsSection({ currentUserId, onOpen, onBack }: { currentUserId
                 );
               })}
             </View>
+            <Copyright />
           </ScrollView>
         )}
       <View style={sec.fabGroup}>
@@ -831,8 +833,8 @@ function RankingSection({ onBack }: { onBack: () => void }) {
                     <Text style={sec.rankSub}>{e.wins}V {e.draws}N {e.losses}D · {e.goals_for}-{e.goals_against}</Text>
                   </View>
                   <View style={sec.rankPts}>
-                    <Text style={sec.rankPtsNum}>{e.points}</Text>
-                    <Text style={sec.rankPtsSub}>pts</Text>
+                    <Text style={sec.rankNum}>{e.points}</Text>
+                    <Text style={sec.rankSub}>pts</Text>
                   </View>
                 </View>
               ))}
@@ -976,6 +978,4 @@ const sec = StyleSheet.create({
   rankName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   rankSub: { fontSize: 11, color: Colors.textMuted },
   rankPts: { alignItems: 'center' },
-  rankPtsNum: { fontSize: 16, fontWeight: '700', color: Colors.green },
-  rankPtsSub: { fontSize: 10, color: Colors.textMuted },
 });

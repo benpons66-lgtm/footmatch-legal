@@ -8,10 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { fetchComputedStatsForUsers } from '../lib/playerStats';
+import Copyright from '../components/Copyright';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Level = 'D4' | 'D3' | 'D2';
+type Level = 'D4' | 'D3' | 'D2' | 'D1';
 
 interface Disponibilite {
   jour:  string;
@@ -33,27 +34,31 @@ interface Player {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  currentUserId:    string | null;
-  blockedUserIds:   string[];
-  guestMode:        boolean;
-  cityName?:        string;
-  onInvite:         (playerId: string) => void;
-  onShowGuestModal: () => void;
-  onViewProfile:    (playerId: string) => void;
+  currentUserId:           string | null;
+  blockedUserIds:          string[];
+  guestMode:               boolean;
+  cityName?:               string;
+  onInvite:                (playerId: string) => void;
+  onShowGuestModal:        () => void;
+  onViewProfile:           (playerId: string) => void;
   /** Incrémenter ce compteur depuis le parent pour forcer le focus sur la barre de recherche */
-  searchSignal?:    number;
+  searchSignal?:           number;
+  /** Nombre de matchs réels de l'utilisateur connecté (source de vérité = match_players) */
+  currentUserMatchesPlayed?: number;
 }
 
 // ─── Config niveaux ───────────────────────────────────────────────────────────
 
 const LEVEL_CFG: Record<Level, { label: string; color: string; bg: string; border: string }> = {
-  D2: { label: 'D2 · Confirmé',  color: '#00E676', bg: 'rgba(0,230,118,0.12)',  border: 'rgba(0,230,118,0.35)'  },
-  D3: { label: 'D3 · Interméd.', color: '#B9F6CA', bg: 'rgba(185,246,202,0.10)',border: 'rgba(185,246,202,0.30)' },
-  D4: { label: 'D4 · Débutant',  color: '#5A7A5A', bg: 'rgba(90,122,90,0.12)',  border: 'rgba(90,122,90,0.30)'  },
+  D1: { label: 'D1', color: '#FFD700', bg: 'rgba(255,215,0,0.12)',  border: 'rgba(255,215,0,0.35)'  },
+  D2: { label: 'D2', color: '#00E676', bg: 'rgba(0,230,118,0.12)',  border: 'rgba(0,230,118,0.35)'  },
+  D3: { label: 'D3', color: '#B9F6CA', bg: 'rgba(185,246,202,0.10)',border: 'rgba(185,246,202,0.30)' },
+  D4: { label: 'D4', color: '#5A7A5A', bg: 'rgba(90,122,90,0.12)',  border: 'rgba(90,122,90,0.30)'  },
 };
 
 const FILTERS: { key: 'all' | Level; label: string }[] = [
   { key: 'all', label: 'Tous'   },
+  { key: 'D1',  label: '⭐ D1' },
   { key: 'D2',  label: '🏆 D2' },
   { key: 'D3',  label: '⚽ D3' },
   { key: 'D4',  label: '🎽 D4' },
@@ -61,7 +66,7 @@ const FILTERS: { key: 'all' | Level; label: string }[] = [
 
 // Niveau brut → clé Level (D4 par défaut). Tolère anciennes valeurs FR si encore en base.
 function normalizeLevel(raw: string | null | undefined): Level {
-  if (raw === 'D2' || raw === 'D3' || raw === 'D4') return raw;
+  if (raw === 'D1' || raw === 'D2' || raw === 'D3' || raw === 'D4') return raw;
   if (raw === 'Confirmé' || raw === 'Pro' || raw === 'Légende') return 'D2';
   if (raw === 'Intermédiaire')                                   return 'D3';
   return 'D4';
@@ -129,7 +134,7 @@ function formatDispos(dispos: Disponibilite[]): string | null {
 }
 
 export default function PlayersScreen({
-  currentUserId, blockedUserIds, guestMode, cityName = 'Perpignan', onInvite, onShowGuestModal, onViewProfile, searchSignal,
+  currentUserId, blockedUserIds, guestMode, cityName = 'Perpignan', onInvite, onShowGuestModal, onViewProfile, searchSignal, currentUserMatchesPlayed,
 }: Props) {
 
   const [players, setPlayers]     = useState<Player[]>(_cachedPlayers);
@@ -203,13 +208,21 @@ export default function PlayersScreen({
       });
   }, [players, search, activeFilter, blockedUserIds]);
 
-  const activeCount = players.length;
+  const activeCount = useMemo(
+    () => players.filter(p => !blockedUserIds.includes(p.id)).length,
+    [players, blockedUserIds],
+  );
 
   // ── Rendu d'une carte joueur ───────────────────────────────────────────────
   function renderPlayer({ item }: { item: Player }) {
     const cfg       = LEVEL_CFG[item.level];
     const init      = (item.pseudo ?? '?')[0].toUpperCase();
     const dispoText = formatDispos(item.disponibilites);
+    // Pour l'utilisateur connecté, utiliser le compteur de matchs passé par le parent
+    // (source de vérité = match_players en DB) plutôt que le cache local
+    const displayMatchesPlayed = (item.id === currentUserId && currentUserMatchesPlayed !== undefined)
+      ? currentUserMatchesPlayed
+      : item.matchesPlayed;
 
     return (
       <TouchableOpacity
@@ -232,8 +245,8 @@ export default function PlayersScreen({
             <View style={[s.levelBadge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
               <Text style={[s.levelText, { color: cfg.color }]}>{cfg.label}</Text>
             </View>
-            {item.matchesPlayed > 0 && (
-              <Text style={s.metaMuted}>{item.matchesPlayed} matchs</Text>
+            {displayMatchesPlayed > 0 && (
+              <Text style={s.metaMuted}>{displayMatchesPlayed} matchs</Text>
             )}
           </View>
 
@@ -343,6 +356,7 @@ export default function PlayersScreen({
           renderItem={renderPlayer}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={s.list}
+          ListFooterComponent={<Copyright />}
           ListEmptyComponent={
             <View style={s.empty}>
               <Ionicons name="people-outline" size={48} color={Colors.textMuted} />
@@ -403,6 +417,7 @@ const s = StyleSheet.create({
 
   filterRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     paddingHorizontal: Spacing.xl,
     marginBottom: 10,
@@ -471,27 +486,14 @@ const s = StyleSheet.create({
   locRow:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
   locText:  { fontSize: 11, color: Colors.textMuted },
 
-  inviteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.greenDim,
-    borderWidth: 1,
-    borderColor: Colors.greenBorder,
-  },
-  inviteText: { fontSize: 11, fontWeight: '700', color: Colors.green },
-
-  dispoRow:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dispoText:     { fontSize: 10, color: Colors.green, fontWeight: '600', flex: 1 },
-  dispoTextEmpty:{ color: Colors.textDim },
-
-  meBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: Colors.greenDim, borderWidth: 1, borderColor: Colors.green + '40' },
-  meText:  { fontSize: 10, fontWeight: '700', color: Colors.green },
-
-  empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  emptyText:  { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
+  inviteBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full, backgroundColor: Colors.greenDim, borderWidth: 1, borderColor: Colors.greenBorder },
+  inviteText:     { fontSize: 11, fontWeight: '700', color: Colors.green },
+  meBadge:        { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full, backgroundColor: Colors.bg3, borderWidth: 1, borderColor: Colors.border },
+  meText:         { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  dispoRow:       { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  dispoText:      { fontSize: 11, color: Colors.green, flex: 1 },
+  dispoTextEmpty: { color: Colors.textDim },
+  empty:          { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
+  emptyTitle:     { fontSize: 18, fontWeight: '900', color: Colors.text },
+  emptyText:      { fontSize: 14, color: Colors.textMuted, textAlign: 'center' },
 });

@@ -1,32 +1,21 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, StatusBar, Platform, Share,
+  StyleSheet, ActivityIndicator, StatusBar, Platform, Share, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors, Spacing, Radius } from '../constants/theme';
-import { getLevelConfig, getLevelFromScore, getLevelProgress } from '../components/ReputationBadge';
+import { getLevelFromScore } from '../components/ReputationBadge';
 import { fetchComputedStatsForUsers, getDisplayReputationScore } from '../lib/playerStats';
 import PlayerCard from '../components/PlayerCard';
-import { getCachedPlayer } from './PlayersScreen';
+import Copyright from '../components/Copyright';
 
 interface Disponibilite {
   jour:  string;
   debut: string;
   fin:   string;
 }
-
-const SKILL_LABELS: Record<string, string> = {
-  vitesse: 'Vitesse',
-  dribbles: 'Dribbles',
-  physique: 'Physique',
-  '2pieds': '2 Pieds',
-  technique: 'Technique',
-  tete: 'Tete',
-  gardien: 'Gardien',
-  vision: 'Vision',
-};
 
 interface Props {
   playerId: string;
@@ -35,6 +24,12 @@ interface Props {
   onBack: () => void;
   onInvite: () => void;
   onToggleBlock?: () => void;
+  /** Stats réelles de l'utilisateur connecté (source de vérité = profil perso).
+   *  Utilisées uniquement quand playerId === currentUserId. */
+  currentUserStats?: {
+    matchesPlayed: number;
+    matchesOrganized: number;
+  };
 }
 
 interface ProfileData {
@@ -46,21 +41,26 @@ interface ProfileData {
   disponibilites?:  Disponibilite[] | null;
   city?:            string | null;
   postal_code?:     string | null;
+  goals?:           number | null;
+  assists?:         number | null;
+  instagram?:       string | null;
+  tiktok?:          string | null;
 }
 
-export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked = false, onBack, onInvite, onToggleBlock }: Props) {
-  const cached = getCachedPlayer(playerId);
+export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked = false, onBack, onInvite, onToggleBlock, currentUserStats }: Props) {
 
-  const [loading, setLoading] = useState(!cached);
-  const [profile, setProfile] = useState<ProfileData | null>(
-    cached ? { id: cached.id, pseudo: cached.pseudo, reputation_score: cached.reputation, created_at: '', skill: null } : null
-  );
+  // Toujours démarrer en état de chargement : on n'affiche jamais de données
+  // périmées d'un autre joueur. Le cache sert uniquement à accélérer le fetch,
+  // pas à pré-remplir l'UI.
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [stats, setStats] = useState({
-    matchesPlayed:        cached?.matchesPlayed ?? 0,
+    matchesPlayed:        0,
     matchesOrganized:     0,
     ratingsReceivedCount: 0,
+    avgRating:            null as number | null,
   });
-  const [displayScore, setDisplayScore] = useState(cached?.reputation ?? 0);
+  const [displayScore, setDisplayScore] = useState(0);
 
   useEffect(() => {
     loadProfile();
@@ -70,21 +70,24 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
     try {
       const { data: p } = await supabase
         .from('profiles')
-        .select('id, pseudo, reputation_score, created_at, skill, disponibilites, city, postal_code')
+        .select('id, pseudo, reputation_score, created_at, skill, disponibilites, city, postal_code, goals, assists, instagram, tiktok')
         .eq('id', playerId)
         .single();
 
       if (!p) {
-        if (!cached) setProfile(null);
+        setProfile(null);
         return;
       }
 
       const computed = (await fetchComputedStatsForUsers([playerId]))[playerId];
-      setProfile(p);
+      setProfile({ ...p, city: p.city ?? 'Perpignan', postal_code: p.postal_code ?? '66000' });
+      const isCurrentUser = playerId === currentUserId;
       setStats({
-        matchesPlayed:        computed?.matchesPlayed ?? 0,
-        matchesOrganized:     computed?.matchesOrganized ?? 0,
+        // Pour l'utilisateur connecté, utiliser les stats du profil perso (inclut matchs futurs)
+        matchesPlayed:        (isCurrentUser && currentUserStats) ? currentUserStats.matchesPlayed    : computed?.matchesPlayed    ?? 0,
+        matchesOrganized:     (isCurrentUser && currentUserStats) ? currentUserStats.matchesOrganized : computed?.matchesOrganized ?? 0,
         ratingsReceivedCount: computed?.ratingsReceivedCount ?? 0,
+        avgRating:            computed?.avgRating ?? null,
       });
       setDisplayScore(getDisplayReputationScore(playerId, p.reputation_score, computed));
     } finally {
@@ -117,11 +120,28 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
 
   const score = displayScore;
   const rank = getLevelFromScore(score);
-  const cfg = getLevelConfig(rank);
-  const levelProgress = getLevelProgress(score);
   const memberSince = profile.created_at
     ? new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
     : null;
+
+  function buildSocialUrl(platform: 'instagram' | 'tiktok', handle: string): string {
+    // Accepte pseudo (@nom ou nom) ou URL complète
+    const clean = handle.trim().replace(/^@/, '');
+    if (platform === 'instagram') {
+      return clean.startsWith('http') ? clean : `https://www.instagram.com/${clean}/`;
+    }
+    return clean.startsWith('http') ? clean : `https://www.tiktok.com/@${clean}`;
+  }
+
+  async function openSocial(platform: 'instagram' | 'tiktok', handle: string) {
+    const url = buildSocialUrl(platform, handle);
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) await Linking.openURL(url);
+    } catch {
+      // Erreur silencieuse
+    }
+  }
 
   async function handleSharePlayer() {
     try {
@@ -154,67 +174,56 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
           rank={rank}
           score={score}
           stats={{
-            matchesPlayed: stats.matchesPlayed,
+            matchesPlayed:    stats.matchesPlayed,
             matchesOrganized: stats.matchesOrganized,
-            avgRating: null,
-            ratingsGiven: stats.ratingsReceivedCount,
-            noShows: 0,
+            avgRating:        stats.avgRating,
+            ratingsGiven:     stats.ratingsReceivedCount,
+            noShows:          0,
+            goals:            profile.goals   ?? 0,
+            assists:          profile.assists ?? 0,
+            skill:            profile.skill   ?? null,
           }}
         />
 
-        {/* Infos joueur sous la carte */}
-        <View style={[s.playerInfoCard, { borderColor: cfg.color + '30' }]}>
-          <Text style={[s.pseudo, { color: cfg.color }]}>{profile.pseudo}</Text>
-          {/* Badge niveau — on affiche uniquement le rang (ex: D2) sans "District —" */}
-          <View style={[s.levelBadge, { backgroundColor: cfg.bgColor, borderColor: cfg.borderColor }]}>
-            <Text style={[s.levelBadgeText, { color: cfg.color }]}>{rank}</Text>
-          </View>
-          {/* Ville et code postal à la place de "Progression" */}
-          {(profile.city || profile.postal_code) && (
-            <View style={s.locationBadge}>
-              <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-              <Text style={s.locationBadgeText}>
+        {/* Infos joueur + disponibilités fusionnées */}
+        <View style={s.infoCard}>
+          <Text style={s.infoCardName}>{profile.pseudo}</Text>
+
+          {/* Ville + CP — toujours visible, fallback si absent */}
+          <View style={s.infoCardRow}>
+            <Ionicons name="location-outline" size={13} color={(profile.city || profile.postal_code) ? Colors.textMuted : Colors.textDim} />
+            {(profile.city || profile.postal_code) ? (
+              <Text style={s.infoCardRowText}>
                 {[profile.city, profile.postal_code].filter(Boolean).join(' · ')}
               </Text>
-            </View>
-          )}
-          {profile.skill && (
-            <View style={s.skillBadge}>
-              <Text style={s.skillBadgeText}>{SKILL_LABELS[profile.skill] ?? profile.skill}</Text>
-            </View>
-          )}
-          {levelProgress.next && (
-            <View style={{ width: '100%', gap: 4, marginTop: 4 }}>
-              <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-                <View style={{ height: '100%', width: `${levelProgress.progress}%` as `${number}%`, backgroundColor: cfg.color, borderRadius: 2 }} />
-              </View>
-              <Text style={{ fontSize: 10, color: cfg.color, textAlign: 'center', fontWeight: '700', opacity: 0.8 }}>
-                {levelProgress.pointsToNext} pts avant {levelProgress.next}
-              </Text>
-            </View>
-          )}
-          {memberSince && <Text style={s.memberSince}>Membre depuis {memberSince}</Text>}
-        </View>
-
-        {/* ── Disponibilités habituelles (affichage complet) ── */}
-        <View style={s.dispoCard}>
-          <View style={s.dispoHeader}>
-            <Ionicons name="calendar-outline" size={15} color={Colors.green} />
-            <Text style={s.dispoTitle}>Disponibilités habituelles</Text>
+            ) : (
+              <Text style={s.infoCardRowTextDim}>Ville non renseignée</Text>
+            )}
           </View>
+
+          {memberSince && (
+            <View style={s.infoCardRow}>
+              <Ionicons name="person-outline" size={13} color={Colors.textMuted} />
+              <Text style={s.infoCardRowText}>Membre depuis {memberSince}</Text>
+            </View>
+          )}
+
+          <View style={s.infoCardDivider} />
+
+          {/* Titre section disponibilités */}
+          <View style={s.infoCardDispoHeader}>
+            <Ionicons name="calendar-outline" size={13} color={Colors.green} />
+            <Text style={s.infoCardDispoHeaderText}>Disponibilités habituelles</Text>
+          </View>
+
           {(() => {
             const dispos: Disponibilite[] = Array.isArray(profile.disponibilites) ? profile.disponibilites : [];
             if (dispos.length === 0) {
-              return (
-                <Text style={s.dispoEmpty}>Aucun créneau renseigné par ce joueur</Text>
-              );
+              return <Text style={s.infoCardDispoEmpty}>Disponibilités non renseignées</Text>;
             }
-            return dispos.map(d => (
-              <View key={d.jour} style={s.dispoRow}>
-                <Text style={s.dispoJour}>{d.jour}</Text>
-                <Text style={s.dispoCren}>{d.debut} → {d.fin}</Text>
-              </View>
-            ));
+            const first2 = dispos.slice(0, 2).map(d => `${d.jour} ${d.debut}-${d.fin}`).join(' · ');
+            const extra = dispos.length > 2 ? ` …+${dispos.length - 2}` : '';
+            return <Text style={s.infoCardDispoText} numberOfLines={2}>{first2 + extra}</Text>;
           })()}
         </View>
 
@@ -240,6 +249,39 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
           </>
         )}
 
+
+
+        {/* ── Réseaux sociaux (si renseignés) ── */}
+        {(profile.instagram || profile.tiktok) && (
+          <View style={s.socialRow}>
+            {profile.instagram && (
+              <TouchableOpacity
+                style={s.socialBtnInstagram}
+                onPress={() => openSocial('instagram', profile!.instagram!)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Voir ${profile.pseudo} sur Instagram`}
+              >
+                <Ionicons name="logo-instagram" size={18} color="#fff" />
+                <Text style={s.socialBtnText}>Instagram</Text>
+              </TouchableOpacity>
+            )}
+            {profile.tiktok && (
+              <TouchableOpacity
+                style={s.socialBtnTiktok}
+                onPress={() => openSocial('tiktok', profile!.tiktok!)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Voir ${profile.pseudo} sur TikTok`}
+              >
+                <Ionicons name="musical-notes" size={18} color="#fff" />
+                <Text style={s.socialBtnText}>TikTok</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        <Copyright />
         <View style={{ height: 60 }} />
       </ScrollView>
     </View>
@@ -252,35 +294,32 @@ const s = StyleSheet.create({
   headerTitle: { fontSize: 14, fontWeight: '900', color: Colors.text, letterSpacing: 1.5, textTransform: 'uppercase' },
   backBtn: { padding: 4 },
   scroll: { padding: Spacing.xl, gap: 16, alignItems: 'center' },
-  playerInfoCard: { backgroundColor: Colors.card, borderRadius: Radius.xl, padding: 20, alignItems: 'center', gap: 10, width: '100%', borderWidth: 1 },
-  pseudo: { fontSize: 22, fontWeight: '900', textAlign: 'center' },
-  levelBadge: { borderRadius: Radius.full, paddingHorizontal: 14, paddingVertical: 5, borderWidth: 1 },
-  levelBadgeText: { fontSize: 12, fontWeight: '700' },
-  skillBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,230,118,0.08)', borderRadius: Radius.full, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(0,230,118,0.30)' },
-  skillBadgeText: { fontSize: 13, fontWeight: '800', color: Colors.greenLight },
-  locationBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
-  locationBadgeText: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
-  memberSince: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
-  // Disponibilités
-  dispoCard:   { width: '100%', backgroundColor: Colors.card, borderRadius: Radius.lg, borderWidth: 1, borderColor: 'rgba(0,230,118,0.15)', padding: Spacing.lg, gap: 8 },
-  dispoHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  dispoTitle:  { fontSize: 13, fontWeight: '800', color: Colors.text },
-  dispoEmpty:  { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
-  dispoRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dispoJour:   { fontSize: 13, fontWeight: '800', color: Colors.green, width: 34 },
-  dispoCren:   { fontSize: 13, color: Colors.textMuted, fontWeight: '600' },
-  // ── Boutons d'action (autre joueur) ────────────────────────────────────────
+  // Carte info + disponibilités fusionnées
+  infoCard:              { width: '100%', backgroundColor: Colors.card, borderRadius: Radius.lg, borderWidth: 1, borderColor: 'rgba(0,230,118,0.15)', padding: Spacing.lg, gap: 10, alignItems: 'center' },
+  infoCardName:          { fontSize: 20, fontWeight: '900', color: Colors.text, textAlign: 'center', marginBottom: 2 },
+  infoCardRow:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  infoCardRowText:       { fontSize: 13, color: Colors.textMuted, fontWeight: '600' },
+  infoCardRowTextDim:    { fontSize: 12, color: Colors.textDim, fontStyle: 'italic' },
+  infoCardDivider:       { height: 1, backgroundColor: 'rgba(0,230,118,0.08)', marginVertical: 2, width: '100%' },
+  infoCardDispoHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  infoCardDispoHeaderText: { fontSize: 12, fontWeight: '800', color: Colors.text },
+  infoCardDispoEmpty:    { fontSize: 12, color: Colors.textDim, fontStyle: 'italic', textAlign: 'center' },
+  infoCardDispoText:     { fontSize: 12, color: Colors.green, fontWeight: '600', textAlign: 'center' },
+  // ── Boutons d'action (autre joueur) ─────────────────────────────────────────
   inviteBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.green, borderRadius: Radius.full, paddingVertical: 14, paddingHorizontal: 24, width: '100%' },
   inviteBtnText:    { fontSize: 15, fontWeight: '800', color: '#000' },
   actionRow:        { flexDirection: 'row', gap: 10, width: '100%' },
-  shareBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.bg3, borderRadius: Radius.full, paddingVertical: 12, borderWidth: 1, borderColor: Colors.greenBorder },
-  shareBtnText:     { fontSize: 14, fontWeight: '700', color: Colors.green },
-  blockBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.bg3, borderRadius: Radius.full, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(255,138,138,0.25)' },
+  shareBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.bg3, borderRadius: Radius.full, paddingVertical: 12, borderWidth: 1, borderColor: Colors.border },
+  shareBtnText:     { fontSize: 13, fontWeight: '700', color: Colors.green },
+  blockBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.bg3, borderRadius: Radius.full, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(255,138,138,0.30)' },
   blockBtnActive:   { borderColor: Colors.greenBorder, backgroundColor: Colors.greenDim },
-  blockBtnText:     { fontSize: 14, fontWeight: '700', color: '#FF8A8A' },
+  blockBtnText:     { fontSize: 13, fontWeight: '700', color: '#FF8A8A' },
   blockBtnTextActive: { color: Colors.green },
-
-  // Ecran joueur introuvable
-  backBtnCenter:      { marginTop: 24, backgroundColor: Colors.greenDim, borderRadius: Radius.full, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(0,230,118,0.40)' },
-  backBtnCenterText:  { color: Colors.green, fontWeight: '700' },
+  backBtnCenter:    { marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, borderRadius: Radius.full, backgroundColor: Colors.bg3, borderWidth: 1, borderColor: Colors.border },
+  backBtnCenterText: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  // ── Réseaux sociaux ──────────────────────────────────────────────────────────
+  socialRow:           { flexDirection: 'row', gap: 10, width: '100%', marginTop: 4 },
+  socialBtnInstagram:  { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: '#C13584', borderRadius: Radius.full, paddingVertical: 12, paddingHorizontal: 14 },
+  socialBtnTiktok:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: '#010101', borderRadius: Radius.full, paddingVertical: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+  socialBtnText:       { fontSize: 13, fontWeight: '700', color: '#fff' },
 });

@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors, Spacing, Radius } from '../constants/theme';
+import Copyright from '../components/Copyright';
 
 interface Championship {
   id: string;
@@ -295,6 +296,7 @@ export default function ChampionshipScreen({ currentUserId, onBack, onOpen }: Pr
             </TouchableOpacity>
           );
         })}
+        <Copyright />
         <View style={{ height: 100 }} />
       </ScrollView>
 

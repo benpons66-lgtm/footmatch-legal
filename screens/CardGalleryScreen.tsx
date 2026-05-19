@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius } from '../constants/theme';
 import PlayerCard from '../components/PlayerCard';
 import { LEVEL_THRESHOLDS, getLevelConfig } from '../components/ReputationBadge';
+import Copyright from '../components/Copyright';
 
 // Uniquement les 4 cartes District
 const DISTRICT_LEVELS = LEVEL_THRESHOLDS.filter(t => t.tier === 'District');
@@ -93,6 +94,7 @@ export default function CardGalleryScreen({ onBack, currentRank, pseudo, score, 
           );
         })}
 
+        <Copyright />
         <View style={{ height: 60 }} />
       </ScrollView>
     </View>
@@ -117,7 +119,7 @@ const s = StyleSheet.create({
   tierDot:          { width: 8, height: 8, borderRadius: 4 },
   tierName:         { fontSize: 12, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
   tierLine:         { flex: 1, height: 1 },
+  scoreRequired:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, backgroundColor: 'rgba(0,0,0,0.25)', marginTop: 8 },
+  scoreRequiredTxt: { fontSize: 11, fontWeight: '700' },
 
-  scoreRequired:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: Radius.full, paddingVertical: 6, paddingHorizontal: 14, alignSelf: 'center', marginTop: 4 },
-  scoreRequiredTxt: { fontSize: 11, fontWeight: '600' },
 });

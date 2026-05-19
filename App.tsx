@@ -33,6 +33,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchComputedStatsForUsers, getDisplayReputationScore, isLaunchCommunityProfile, isSeededProfileId } from './lib/playerStats';
 import { getLevelFromScore } from './components/ReputationBadge';
+import Copyright from './components/Copyright';
 
 const { width } = Dimensions.get('window');
 const BLOCKED_USERS_STORAGE_KEY = 'footmatch-blocked-users';
@@ -47,13 +48,13 @@ const FORBIDDEN_TERMS = [
 // ─── Skill system ─────────────────────────────────────────────────────────────
 export const SKILLS = [
   { key: 'vitesse',   label: 'Vitesse',   emoji: '⚡', iconName: 'flash'            },
-  { key: 'dribbles',  label: 'Dribbles',  emoji: '⚽', iconName: 'football'         },
+  { key: 'dribbles',  label: 'Dribbles',  emoji: '🪄', iconName: 'football'         },
   { key: 'physique',  label: 'Physique',  emoji: '💪', iconName: 'barbell'          },
   { key: '2pieds',    label: '2 Pieds',   emoji: '🦶', iconName: 'footsteps'        },
   { key: 'technique', label: 'Technique', emoji: '🎯', iconName: 'brush'            },
-  { key: 'tete',      label: 'Tête',      emoji: '⬆️', iconName: 'arrow-up-circle' },
+  { key: 'tete',      label: 'Tête',      emoji: '🦅', iconName: 'arrow-up-circle' },
   { key: 'gardien',   label: 'Gardien',   emoji: '🧤', iconName: 'hand-right'       },
-  { key: 'vision',    label: 'Vision',    emoji: '👁️', iconName: 'eye'              },
+  { key: 'vision',    label: 'Vision',    emoji: '🔭', iconName: 'eye'              },
 ];
 
 // Niveau calculé automatiquement depuis le score de réputation
@@ -159,6 +160,8 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [screen, setScreen] = useState<'login'|'register'|'home'|'create'|'detail'|'profile'|'chat'|'map'|'players'|'venues'|'propose_venue'|'reputation'|'card'|'legal'|'championship'|'championship_detail'|'player_profile'|'community_chat'|'community'|'competitions'|'team_detail'|'cup_detail'>(currentUser ? 'home' : 'login');
+  // Mémorise l'écran d'origine avant de naviguer vers 'detail' (pour le bouton retour)
+  const [detailOriginScreen, setDetailOriginScreen] = useState<string>('home');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pseudo, setPseudo] = useState('');
@@ -182,6 +185,7 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [userLocation, setUserLocation] = useState<{latitude:number,longitude:number}|null>(null);
   const [userCityName, setUserCityName] = useState<string>('Perpignan');
   const [searchQuery, setSearchQuery] = useState('');
@@ -212,8 +216,11 @@ export default function App() {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [selectedCup, setSelectedCup] = useState<Cup | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
+  const [profileOriginScreen, setProfileOriginScreen] = useState<typeof screen>("home");
   const [userSkill, setUserSkill] = useState<string | null>(null);
   const [userDisponibilites, setUserDisponibilites] = useState<{jour:string;debut:string;fin:string}[]>([]);
+
+
   const [guestMode, setGuestMode] = useState(false);
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [venueSearch, setVenueSearch] = useState('');
@@ -266,10 +273,16 @@ export default function App() {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     });
 
-    return rawMatches.map((match: any) => ({
-      ...match,
-      current_players: counts.get(String(match.id)) ?? Math.max(0, Number(match.current_players ?? 0)),
-    }));
+    return rawMatches.map((match: any) => {
+      // Matchs passés : conserver current_players stocké en DB (valeur historique).
+      // Matchs à venir : utiliser le count live depuis match_players.
+      const isPast = new Date(match.scheduled_at) < new Date();
+      if (isPast) return match;
+      return {
+        ...match,
+        current_players: counts.get(String(match.id)) ?? Math.max(0, Number(match.current_players ?? 0)),
+      };
+    });
   }
 
   function requireAuth(action: () => void) {
@@ -607,11 +620,11 @@ export default function App() {
     if (!currentUser || avatarLoaded) return;
     let { data } = await supabase
       .from('profiles')
-      .select('avatar_id, avatar_photo_url, skill, goals, assists, disponibilites')
+      .select('avatar_id, avatar_photo_url, skill, goals, assists, disponibilites, instagram, tiktok')
       .eq('id', currentUser.id)
       .single();
     if (!data) {
-      const fallback = await supabase.from('profiles').select('avatar_id, avatar_photo_url, skill, disponibilites').eq('id', currentUser.id).single();
+      const fallback = await supabase.from('profiles').select('avatar_id, avatar_photo_url, skill, disponibilites, instagram, tiktok').eq('id', currentUser.id).single();
       data = fallback.data as any;
     }
     if (data) {
@@ -806,7 +819,12 @@ export default function App() {
         .select('*, user:profiles(id,pseudo)')
         .single();
       if (error) throw error;
-      setMessages((prev) => [...prev.filter((item: any) => item.id !== tempId), data]);
+      // Déduplication : le listener Realtime a peut-être déjà injecté le vrai message
+      setMessages((prev) => {
+        const withoutTemp = prev.filter((item: any) => item.id !== tempId);
+        if (withoutTemp.some((item: any) => item.id === data.id)) return withoutTemp;
+        return [...withoutTemp, data];
+      });
       requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated: true }));
     } catch (e:any) {
       setMessages((prev) => prev.filter((item: any) => item.id !== tempId));
@@ -848,7 +866,7 @@ export default function App() {
       const [profilesRes, matchesRes, completedRes] = await Promise.all([
         supabase.from('profiles').select('*', { count: 'exact', head: true }),
         supabase.from('matches').select('*', { count: 'exact', head: true }).eq('status','open').gte('scheduled_at', now),
-        supabase.from('matches').select('*', { count: 'exact', head: true }).eq('status','played'),
+        supabase.from('matches').select('*', { count: 'exact', head: true }).lt('scheduled_at', now).not('status','eq','cancelled'),
       ]);
       setLiveStats({
         players:          profilesRes.count ?? 0,
@@ -923,30 +941,32 @@ export default function App() {
   async function loadMatches(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
     try {
-      // Marquer automatiquement comme joués les matchs terminés depuis +3h
-      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      // Marquer automatiquement comme joués les matchs dont l'heure est passée
+      const now = new Date().toISOString();
       await supabase.from('matches').update({ status: 'played' })
-        .lt('scheduled_at', threeHoursAgo)
+        .lt('scheduled_at', now)
         .not('status', 'in', '(cancelled,played)');
 
-      const { data } = await supabase.from('matches')
-        .select('id, title, scheduled_at, status, type, organizer_id, max_players, current_players, is_private, price_per_player, description, venue_id, venue_name, venue_address, venue_postal, venue_city, venue:venues(id, name, city, address, latitude, longitude, types, postal_code)')
+      const { data, error } = await supabase.from('matches')
+        .select('id, title, scheduled_at, status, type, organizer_id, max_players, current_players, is_private, price_per_player, description, venue_id, venue_name, venue_address, venue_postal, venue_city, venue:venues(id, name, city, address, latitude, longitude, types)')
         .neq('status','cancelled')
         .order('scheduled_at', { ascending: true })
         .limit(200);
-      const hydratedMatches = await hydrateMatchesWithActualPlayers(data ?? []);
-      setMatches(hydratedMatches);
-      const now2 = new Date();
-      setLiveStats((prev) => ({
-        ...prev,
-        matchesTonight: hydratedMatches.filter((match: any) => match.status === 'open' && new Date(match.scheduled_at) >= now2).length,
-        matchesCompleted: (data ?? []).filter((match: any) => match.status === 'played').length,
-      }));
+      if (!error && data) {
+        const hydratedMatches = await hydrateMatchesWithActualPlayers(data);
+        setMatches(hydratedMatches);
+      }
       setMatchesLoaded(true);
+      loadLiveStats();
     } finally { setRefreshing(false); }
   }
 
-  async function loadMatchDetail(match: any) {
+  async function loadMatchDetail(match: any, originScreen?: string) {
+    // Mémoriser l'écran d'origine pour le bouton retour du détail
+    // Ne pas écraser si on est déjà sur 'detail' (ex: bouton Réessayer)
+    if (screen !== 'detail') {
+      setDetailOriginScreen(originScreen ?? screen);
+    }
     // Réinitialiser immédiatement pour éviter le flash des anciennes données
     setMatchPlayers([]);
     setMatchPlayersLoading(true);
@@ -971,9 +991,15 @@ export default function App() {
       return;
     }
 
+    const matchIsAlreadyPast = new Date(match.scheduled_at) < new Date();
+
     if (playersRes.data.length > 0) {
-      // Mettre à jour le count immédiatement depuis la réponse réelle
-      setSelectedMatch((prev: any) => prev ? { ...prev, current_players: playersRes.data.length } : prev);
+      // Matchs à venir : mettre à jour current_players avec le compte live (précis).
+      // Matchs passés : NE PAS écraser current_players — la valeur stockée en DB est
+      // la donnée historique (combien de joueurs il y avait au moment du match).
+      if (!matchIsAlreadyPast) {
+        setSelectedMatch((prev: any) => prev ? { ...prev, current_players: playersRes.data.length } : prev);
+      }
       // Afficher les joueurs bruts immédiatement (pseudo + level dispo dès Round 1)
       setMatchPlayers(playersRes.data);
       setMatchPlayersLoading(false);
@@ -981,10 +1007,14 @@ export default function App() {
       // Enrichissement en arrière-plan (display_score, display_level, display_matches_played)
       const enrichedPlayers = await enrichMatchPlayers(playersRes.data);
       setMatchPlayers(enrichedPlayers);
-      setSelectedMatch((prev: any) => prev ? { ...prev, current_players: enrichedPlayers.length } : prev);
+      if (!matchIsAlreadyPast) {
+        setSelectedMatch((prev: any) => prev ? { ...prev, current_players: enrichedPlayers.length } : prev);
+      }
     } else {
-      // Tableau vide — aucun joueur inscrit
-      setSelectedMatch((prev: any) => prev ? { ...prev, current_players: 0 } : prev);
+      // Tableau vide — aucun joueur inscrit (uniquement mis à jour pour matchs à venir)
+      if (!matchIsAlreadyPast) {
+        setSelectedMatch((prev: any) => prev ? { ...prev, current_players: 0 } : prev);
+      }
       setMatchPlayersLoading(false);
       stopSkeletonAnim();
     }
@@ -1111,6 +1141,7 @@ export default function App() {
       setCurrentUser({ id:data.user.id, email:data.user.email!, pseudo:p?.pseudo??email.split('@')[0], level:p?.level??'D4', matchesPlayed:0, matchesCreated:0, reputation_score:p?.reputation_score??0, reputation_rank:p?.reputation_rank??'D4' });
       setUserSkill(p?.skill ?? null);
       setUserDisponibilites(Array.isArray(p?.disponibilites) ? p.disponibilites : []);
+
       // Appliquer les disponibilités en attente enregistrées lors de l'inscription
       try {
         const pendingKey = `@footmatch_pending_dispo_${data.user.email}`;
@@ -1157,11 +1188,20 @@ export default function App() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    setMyMatches([]);
-    setMyCreatedMatches([]);
-    setScreen('login');
+    if (loggingOut) return; // anti double-tap
+    setLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // signOut peut échouer si la session a expiré — on nettoie quand même
+    } finally {
+      setCurrentUser(null);
+      setMyMatches([]);
+      setMyCreatedMatches([]);
+      setMyRatings({});
+      setLoggingOut(false);
+      setScreen('login');
+    }
   }
 
   async function updateSkill(newSkill: string) {
@@ -1403,9 +1443,12 @@ export default function App() {
         description:form.description, is_private:false, status:'open',
       }).select().single();
       if (error) throw error;
-      await supabase.from('match_players').insert({ match_id:data.id, user_id:currentUser!.id, status:'confirmed' });
+      const mpRes = await supabase.from('match_players').insert({ match_id:data.id, user_id:currentUser!.id, status:'confirmed' });
+      if (mpRes.error) throw mpRes.error;
       scheduleMatchReminder(data.title, new Date(data.scheduled_at), data.id, true);
-      setMyMatches(prev => [...prev, data.id]);
+      setMyMatches([...myMatches, data.id]);
+      setMyCreatedMatches([data, ...myCreatedMatches]);
+      setMatches([...matches, { ...data, venue: null }]);
       Alert.alert('🎉 Match créé !','Ton match est en ligne !');
       setForm({ title:'', type:'five', venueId:'', venueName:'', venueAddress:'', venuePostal:'', venueCity:'', date:'', time:'', maxPlayers:'10', price:'', description:'', isPrivate:false, isFree:true }); setFormErrors({}); setCitySuggestions([]); setVenueSearchOpen(false); setVenueSearchText(''); setAddressSuggestions([]); setAddressSearchOpen(false); setAddressSearchText('');
       setScreen('home'); loadMatches();
@@ -1428,7 +1471,10 @@ export default function App() {
               await supabase.from('match_players').delete().eq('match_id', selectedMatch.id);
               const { error } = await supabase.from('matches').delete().eq('id', selectedMatch.id);
               if (error) throw error;
-              setMyMatches(prev => prev.filter(id => id !== selectedMatch.id));
+              const deletedId = selectedMatch.id;
+              setMatches(matches.filter((m: any) => m.id !== deletedId));
+              setMyMatches(myMatches.filter(id => id !== deletedId));
+              setMyCreatedMatches(myCreatedMatches.filter((m: any) => m.id !== deletedId));
               setSelectedMatch(null);
               setScreen('home');
               loadMatches();
@@ -1701,7 +1747,7 @@ export default function App() {
     const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating);
     Alert.alert(
       'Confirmer cette note ?',
-      `${stars}  ${rating}/5\n\nCette note sera enregistrée pour ce match.`,
+      `${stars}  ${rating}/5\n\nCette note sera enregistrée pour ce match.\nElle ne pourra plus être modifiée.`,
       [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Valider', onPress: () => handleRate(matchId, rating) },
@@ -1770,13 +1816,15 @@ export default function App() {
     return <LevelUpModal rank={levelUpRank} onClose={() => setShowLevelUp(false)} />;
   }
 
+  // ── Matchs passés (disponible dans tous les écrans) ───────────────────────────
+  const pastMatches = matches.filter((m:any) => myMatches.includes(m.id) && new Date(m.scheduled_at) < new Date());
+
   // ── CARTE JOUEUR ──────────────────────────────────────────────────────────────
   if (screen === 'card') {
-    const pastMatches = matches.filter((m:any) => myMatches.includes(m.id) && new Date(m.scheduled_at) < new Date());
     const ratedCount = Object.keys(myRatings).length;
     const avg = ratedCount > 0 ? Object.values(myRatings).reduce((a,b)=>a+b,0)/ratedCount : null;
     const cardStats = {
-      matchesPlayed: myMatches.length,
+      matchesPlayed: pastMatches.length,
       matchesOrganized: myCreatedMatches.length,
       avgRating: avg,
       ratingsGiven: ratedCount,
@@ -2047,13 +2095,24 @@ export default function App() {
         <View style={s.chatHeaderCenter}>
           <Text style={s.chatHeaderTitle} numberOfLines={1}>{selectedMatch.title}</Text>
           <Text style={s.chatHeaderSub}>{playersCount}/{maxPlayers} joueurs · {isPast ? 'Terminé' : matchDate.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</Text>
+          {(venue?.city || selectedMatch.venue_city) && (
+            <Text style={s.chatHeaderSub} numberOfLines={1}>
+              {[venue?.city ?? selectedMatch.venue_city, selectedMatch.venue_postal].filter(Boolean).join(' · ')}
+            </Text>
+          )}
         </View>
         <TouchableOpacity
           style={s.chatShareAddrBtn}
           accessibilityRole="button" accessibilityLabel="Partager l'adresse du terrain"
           onPress={async () => {
-            if (!venue?.address || !currentUser || !selectedMatch) return;
-            const addr = `📍 ${venue.name} — ${venue.address}, ${venue.city}`;
+            if (!currentUser || !selectedMatch) return;
+            // Fallback : venue lié OU champs texte libres du match
+            const vName = venue?.name ?? selectedMatch.venue_name ?? 'Terrain';
+            const vAddr = venue?.address ?? selectedMatch.venue_address ?? null;
+            const vCity = venue?.city ?? selectedMatch.venue_city ?? null;
+            if (!vName && !vAddr) return;
+            const addrParts = [vName, vAddr, vCity].filter(Boolean);
+            const addr = `📍 ${addrParts.join(' — ')}`;
             const tempId = `addr-temp-${Date.now()}`;
             const optimistic = { id: tempId, match_id: selectedMatch.id, user_id: currentUser.id, content: addr, created_at: new Date().toISOString(), user: { id: currentUser.id, pseudo: currentUser.pseudo } };
             setMessages((prev) => [...prev, optimistic]);
@@ -2061,7 +2120,13 @@ export default function App() {
             try {
               const { data, error } = await supabase.from('chat_messages').insert({ match_id: selectedMatch.id, user_id: currentUser.id, content: addr }).select('*, user:profiles(id,pseudo)').single();
               if (error) throw error;
-              setMessages((prev) => [...prev.filter((m:any) => m.id !== tempId), data]);
+              // Déduplication : le listener Realtime a peut-être déjà injecté le vrai message
+              setMessages((prev) => {
+                const withoutTemp = prev.filter((m:any) => m.id !== tempId);
+                if (withoutTemp.some((m:any) => m.id === data.id)) return withoutTemp;
+                return [...withoutTemp, data];
+              });
+              requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated: true }));
             } catch (e:any) {
               setMessages((prev) => prev.filter((m:any) => m.id !== tempId));
               Alert.alert('Erreur', e instanceof Error ? e.message : 'Erreur inconnue');
@@ -2096,7 +2161,7 @@ export default function App() {
                 const isAddr = item.content?.startsWith('📍');
                 return (
                   <View style={[s.msgWrap, isMe&&s.msgWrapMe]}>
-                    {!isMe&&<TouchableOpacity onPress={()=>{ if(item.user?.id){ seedPlayerCache({ id: item.user.id, pseudo: item.user.pseudo ?? 'Joueur', reputation: item.user.reputation_score ?? 0 }); setSelectedPlayer(item.user.id); setScreen('player_profile'); } }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
+                    {!isMe&&<TouchableOpacity onPress={()=>{ if(item.user?.id){ seedPlayerCache({ id: item.user.id, pseudo: item.user.pseudo ?? 'Joueur', reputation: item.user.reputation_score ?? 0 }); setSelectedPlayer(item.user.id); setProfileOriginScreen(screen); setScreen('player_profile'); } }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
                     <TouchableOpacity onLongPress={()=>handleMessageLongPressStoreReady(item, 'match')} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Appui long pour signaler ce message" accessibilityHint="Maintenez appuyé pour voir les options">
                       <View style={[s.msgBubble, isMe&&s.msgBubbleMe, isAddr&&s.msgBubbleAddr]}>
                         <Text style={[s.msgText, isMe&&s.msgTextMe, isAddr&&s.msgTextAddr]}>{item.content}</Text>
@@ -2146,7 +2211,7 @@ export default function App() {
         <StatusBar barStyle="light-content" />
         {/* Header unifié — même structure que la page Matchs */}
         <View style={s.homeHeader}>
-          <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
+          <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.io');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
             <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="mail-outline" size={11} color={Colors.textMuted} /><Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>Contact</Text></View>
           </TouchableOpacity>
           <View style={s.homeLogoWrap} pointerEvents="none">
@@ -2163,8 +2228,9 @@ export default function App() {
           cityName={userCityName}
           onInvite={(playerId) => openInviteModal(playerId)}
           onShowGuestModal={() => setShowGuestModal(true)}
-          onViewProfile={(playerId) => { setSelectedPlayer(playerId); setScreen('player_profile'); }}
+          onViewProfile={(playerId) => { setProfileOriginScreen(screen); setSelectedPlayer(playerId); setScreen('player_profile'); }}
           searchSignal={playersSearchSignal}
+          currentUserMatchesPlayed={matches.filter((m:any) => myMatches.includes(m.id) && new Date(m.scheduled_at) < new Date()).length}
         />
         <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
         {renderInviteModal()}
@@ -2179,12 +2245,17 @@ export default function App() {
     return (
       <>
         <PlayerProfileScreen
+          key={selectedPlayer}
           playerId={selectedPlayer}
           currentUserId={currentUser?.id ?? null}
           isBlocked={blockedUserIds.includes(selectedPlayer)}
-          onBack={() => setScreen('players')}
+          onBack={() => setScreen(profileOriginScreen)}
           onInvite={() => { if (selectedPlayer) openInviteModal(selectedPlayer); }}
           onToggleBlock={() => toggleBlockedUserStoreReady(selectedPlayer)}
+          currentUserStats={{
+            matchesPlayed:    pastMatches.length,
+            matchesOrganized: myCreatedMatches.length,
+          }}
         />
         {renderInviteModal()}
         {renderToast()}
@@ -2198,37 +2269,29 @@ export default function App() {
     return (
       <View style={s.container}>
         <StatusBar barStyle="light-content" />
-        {/* Header unifié — même structure que la page Matchs */}
         <View style={s.homeHeader}>
-          <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
+          <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.io');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
             <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="mail-outline" size={11} color={Colors.textMuted} /><Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>Contact</Text></View>
           </TouchableOpacity>
           <View style={s.homeLogoWrap} pointerEvents="none">
             <Image source={require('./assets/logo footmatch transparent.png')} style={s.homeLogo} resizeMode="contain" fadeDuration={0} />
           </View>
-          {/* Placeholder côté droit pour symétrie */}
-          <View style={{width:46}} />
+          <TouchableOpacity
+            style={s.searchBtn}
+            onPress={() => Alert.alert('🚀 En cours de développement', 'La section Équipes — championnats et tournois — est en cours de développement.\n\nElle arrive dans une prochaine mise à jour. Reste connecté !')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Équipes — en cours de développement"
+          >
+            <Ionicons name="trophy-outline" size={20} color={Colors.green} />
+          </TouchableOpacity>
         </View>
-        {/* Bouton Compétitions — teaser fonctionnalité à venir */}
-        <TouchableOpacity
-          style={s.competitionsTeaser}
-          onPress={()=>Alert.alert('🔒 Bientôt disponible','La section Compétitions (tournois, coupes & ligue) arrive très prochainement sur FootMatch !')}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="Compétitions — bientôt disponible"
-        >
-          <View style={s.competitionsTeaserIcon}><Text style={{fontSize:18}}>🏆</Text></View>
-          <View style={{flex:1}}>
-            <Text style={s.competitionsTeaserTitle}>Compétitions</Text>
-            <Text style={s.competitionsTeaserSub}>Tournois, coupes & ligue</Text>
-          </View>
-          <View style={s.competitionsTeaserBadge}><Text style={s.competitionsTeaserBadgeText}>Bientôt</Text></View>
-        </TouchableOpacity>
         <CommunityScreen
-          onJoinMatch={(id) => { /* navigate to match detail */ }}
-          onNavigate={(scr, filter) => {
-            if (filter) setActiveFilter(filter);
-            setScreen(scr as any);
+          onViewProfile={(playerId) => {
+            seedPlayerCache({ id: playerId, pseudo: 'Joueur', reputation: 0 });
+            setProfileOriginScreen(screen);
+            setSelectedPlayer(playerId);
+            setScreen('player_profile');
           }}
         />
         <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
@@ -2328,12 +2391,15 @@ export default function App() {
         </View>
       );
     }
-    const pastMatches=matches.filter((m:any)=>myMatches.includes(m.id)&&new Date(m.scheduled_at)<new Date());
-    const upcomingMatches=matches.filter((m:any)=>myMatches.includes(m.id)&&new Date(m.scheduled_at)>new Date());
+    // Tri décroissant pour l'affichage : les matchs les plus récents en premier
+    const pastMatchesSorted=[...pastMatches].sort((a:any,b:any)=>new Date(b.scheduled_at).getTime()-new Date(a.scheduled_at).getTime());
+    const upcomingMatches=matches
+      .filter((m:any)=>myMatches.includes(m.id)&&new Date(m.scheduled_at)>new Date())
+      .sort((a:any,b:any)=>new Date(a.scheduled_at).getTime()-new Date(b.scheduled_at).getTime());
     const ratedCount=Object.keys(myRatings).length;
     const avgRating=ratedCount>0?(Object.values(myRatings).reduce((a,b)=>a+b,0)/ratedCount).toFixed(1):null;
     const toRate=pastMatches.filter((m:any)=>!myRatings[m.id]);
-    const cardStats = { matchesPlayed:myMatches.length, matchesOrganized:myCreatedMatches.length, avgRating:avgRating?parseFloat(avgRating):null, ratingsGiven:ratedCount, noShows:0 };
+    const cardStats = { matchesPlayed:pastMatches.length, matchesOrganized:myCreatedMatches.length, avgRating:avgRating?parseFloat(avgRating):null, ratingsGiven:ratedCount, noShows:0 };
     const profileScore = currentUser?.reputation_score ?? 0;
     const profileRank = getLevelFromScore(profileScore);
     const profileCfg = getLevelConfig(profileRank);
@@ -2344,7 +2410,12 @@ export default function App() {
         <StatusBar barStyle="light-content" />
         <View style={s.pageHeader}>
           <Text style={s.pageHeaderTitle}>Mon Profil</Text>
-          <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="Se déconnecter"><Text style={s.logoutBtnText}>Déconnexion</Text></TouchableOpacity>
+          <TouchableOpacity style={[s.logoutBtn, loggingOut && { opacity: 0.5 }]} onPress={handleLogout} disabled={loggingOut} accessibilityRole="button" accessibilityLabel="Se déconnecter">
+            {loggingOut
+              ? <ActivityIndicator size="small" color={Colors.greenDark} />
+              : <Text style={s.logoutBtnText}>Déconnexion</Text>
+            }
+          </TouchableOpacity>
         </View>
         <ScrollView ref={profileScrollRef} showsVerticalScrollIndicator={false}>
 
@@ -2355,7 +2426,7 @@ export default function App() {
               rank={getAutoLevel(currentUser?.reputation_score ?? 0)}
               score={currentUser?.reputation_score ?? 0}
               stats={{
-                matchesPlayed:    myMatches.length,
+                matchesPlayed:    pastMatches.length,
                 matchesOrganized: myCreatedMatches.length,
                 avgRating:        avgRating ? parseFloat(avgRating) : null,
                 ratingsGiven:     ratedCount,
@@ -2365,6 +2436,14 @@ export default function App() {
                 skill:            userSkill ?? null,
               }}
               avatarId={userAvatar}
+              onSkillPress={() => Alert.alert(
+                '⚡ Mon skill principal',
+                'Choisis ta caractéristique la plus forte',
+                [
+                  ...SKILLS.map(sk => ({ text: `${sk.emoji}  ${sk.label}`, onPress: () => updateSkill(sk.key) })),
+                  { text: 'Annuler', style: 'cancel' },
+                ]
+              )}
             />
           </View>
 
@@ -2372,25 +2451,6 @@ export default function App() {
           <View style={s.profileHeader}>
             <Text style={s.profileName}>{currentUser?.pseudo}</Text>
             <Text style={s.profileEmail}>{currentUser?.email}</Text>
-            <TouchableOpacity
-              style={{marginTop:8, flexDirection:'row', alignItems:'center', gap:6, backgroundColor:userSkill ? Colors.greenDim : Colors.bg2, borderRadius:Radius.full, paddingHorizontal:16, paddingVertical:7, borderWidth:1, borderColor:userSkill ? Colors.green+'50' : 'rgba(255,255,255,0.10)'}}
-              accessibilityRole="button" accessibilityLabel="Choisir mon skill principal"
-              onPress={() => {
-                Alert.alert(
-                  '⚡ Mon skill principal',
-                  'Choisis ta caractéristique la plus forte',
-                  [
-                    ...SKILLS.map(sk => ({ text: `${sk.emoji}  ${sk.label}`, onPress: () => updateSkill(sk.key) })),
-                    {text:'Annuler', style:'cancel'},
-                  ]
-                );
-              }}
-            >
-              <Ionicons name={(SKILLS.find(sk => sk.key === userSkill)?.iconName ?? 'flash') as any} size={15} color={userSkill ? Colors.green : Colors.textMuted} />
-              <Text style={{fontSize:12, color: userSkill ? Colors.green : Colors.textMuted, fontWeight:'700'}}>
-                {userSkill ? SKILLS.find(sk => sk.key === userSkill)?.label ?? 'Skill' : 'Choisir mon skill'}
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* ── Disponibilités habituelles (édition profil) ── */}
@@ -2461,6 +2521,8 @@ export default function App() {
             <Text style={s.shareProfileBtnText}>Partager mon profil</Text>
           </TouchableOpacity>
 
+
+
           <View style={s.statsGrid}>
             <View style={s.statCard}><Text style={s.statCardN}>{myMatches.length}</Text><Text style={s.statCardL}>Total matchs</Text></View>
             <View style={s.statCard}><Text style={s.statCardN}>{upcomingMatches.length}</Text><Text style={s.statCardL}>À venir</Text></View>
@@ -2521,6 +2583,7 @@ export default function App() {
               <Text style={s.btnText}>Enregistrer mes stats</Text>
             </TouchableOpacity>
           </View>
+
 
           {pendingInvites.length > 0 && (
             <View style={{paddingHorizontal:Spacing.xl, marginBottom:Spacing.lg}}>
@@ -2593,7 +2656,7 @@ export default function App() {
           {pastMatches.length > 0 && (
             <View style={{paddingHorizontal:Spacing.xl, marginBottom:Spacing.lg}}>
               <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}><Ionicons name="time" size={15} color={Colors.green} /><Text style={s.sectionTitle}>Derniers matchs</Text></View>
-              {pastMatches.slice(0, 5).map((m: any) => {
+              {pastMatchesSorted.slice(0, 5).map((m: any) => {
                 const cfg = MATCH_TYPES[m.type as keyof typeof MATCH_TYPES];
                 const rated = !!myRatings[m.id];
                 return (
@@ -2617,6 +2680,39 @@ export default function App() {
 
           {/* Légal & Danger Zone */}
           <View style={s.dangerZone}>
+            {/* Suivez-nous */}
+            <View style={{backgroundColor:'rgba(0,230,118,0.06)', borderRadius:Radius.lg, borderWidth:1, borderColor:'rgba(0,230,118,0.12)', padding:16, gap:12}}>
+              <View style={{flexDirection:'row', alignItems:'center', gap:8}}>
+                <View style={{flex:1, height:1, backgroundColor:'rgba(0,230,118,0.15)'}} />
+                <Text style={{fontSize:11, fontWeight:'900', color:Colors.green, letterSpacing:2, textTransform:'uppercase'}}>Suivez-nous</Text>
+                <View style={{flex:1, height:1, backgroundColor:'rgba(0,230,118,0.15)'}} />
+              </View>
+              <Text style={{fontSize:11, color:Colors.textMuted, textAlign:'center'}}>Actus, coulisses et prochains matchs 🎯</Text>
+              <View style={{flexDirection:'row', gap:10}}>
+                <TouchableOpacity
+                  style={{flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingVertical:12, borderRadius:Radius.md, backgroundColor:'rgba(193,53,132,0.15)', borderWidth:1, borderColor:'rgba(193,53,132,0.40)'}}
+                  onPress={()=>Linking.openURL('https://www.instagram.com/footmatch.io/')}
+                  accessibilityRole="button" accessibilityLabel="Suivre FootMatch sur Instagram"
+                >
+                  <Ionicons name="logo-instagram" size={18} color="#E1306C" />
+                  <View>
+                    <Text style={{fontSize:12, fontWeight:'900', color:'#E1306C'}}>Instagram</Text>
+                    <Text style={{fontSize:10, color:Colors.textMuted}}>@footmatch.io</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingVertical:12, borderRadius:Radius.md, backgroundColor:'rgba(255,255,255,0.05)', borderWidth:1, borderColor:'rgba(255,255,255,0.15)'}}
+                  onPress={()=>Linking.openURL('https://www.tiktok.com/@footmatch.io')}
+                  accessibilityRole="button" accessibilityLabel="Suivre FootMatch sur TikTok"
+                >
+                  <Ionicons name="musical-notes" size={18} color="#fff" />
+                  <View>
+                    <Text style={{fontSize:12, fontWeight:'900', color:Colors.text}}>TikTok</Text>
+                    <Text style={{fontSize:10, color:Colors.textMuted}}>@footmatch.io</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
             <TouchableOpacity style={s.legalProfileBtn} onPress={()=>setScreen('legal')} accessibilityRole="button" accessibilityLabel="Voir la politique de confidentialité et les CGU">
               <Ionicons name="document-text-outline" size={14} color={Colors.textMuted} />
               <Text style={s.legalProfileBtnText}>Politique de confidentialité & CGU</Text>
@@ -2626,6 +2722,7 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
+          <Copyright />
           <View style={{height:100}} />
         </ScrollView>
         <BottomNav active={screen} onNavigate={handleNavigate} toRateCount={profileBadgeCount} onCreateMatch={()=>requireAuth(()=>setScreen('create'))} />
@@ -2638,7 +2735,12 @@ export default function App() {
   // ── DÉTAIL MATCH ──────────────────────────────────────────────────────────────
   if (screen==='detail'&&selectedMatch) {
     const cfg=MATCH_TYPES[selectedMatch.type as keyof typeof MATCH_TYPES];
-    const actualCurrentPlayers = matchPlayers.length > 0 ? matchPlayers.length : selectedMatch.current_players;
+    // Pour les matchs passés : utiliser current_players (valeur historique stockée au moment du match).
+    // Pour les matchs à venir : utiliser le compte live depuis match_players (précis en temps réel).
+    const isPastCalc = new Date(selectedMatch.scheduled_at) < new Date();
+    const actualCurrentPlayers = isPastCalc
+      ? (selectedMatch.current_players ?? matchPlayers.length)
+      : (matchPlayers.length > 0 ? matchPlayers.length : selectedMatch.current_players);
     const remainingSpots = Math.max(0, selectedMatch.max_players - actualCurrentPlayers);
     const pct=actualCurrentPlayers/selectedMatch.max_players;
     const barColor=pct>=1?Colors.greenDark:pct>=0.8?Colors.greenLight:Colors.green;
@@ -2652,7 +2754,7 @@ export default function App() {
     return (
       <View style={s.container}>
         <View style={s.subHeader}>
-          <TouchableOpacity style={s.backBtn} onPress={()=>setScreen('home')} accessibilityRole="button" accessibilityLabel="Retour"><Ionicons name="chevron-back" size={22} color={Colors.green} /></TouchableOpacity>
+          <TouchableOpacity style={s.backBtn} onPress={()=>setScreen(detailOriginScreen as any ?? 'home')} accessibilityRole="button" accessibilityLabel="Retour"><Ionicons name="chevron-back" size={22} color={Colors.green} /></TouchableOpacity>
           <View style={[s.badge,{backgroundColor:cfg?.dimColor,borderColor:cfg?.borderColor}]}><Ionicons name={cfg?.iconName as any} size={10} color={cfg?.color} /><Text style={[s.badgeText,{color:cfg?.color}]}>{cfg?.label}</Text></View>
           <TouchableOpacity onPress={handleShare} style={s.shareDetailBtn} accessibilityRole="button" accessibilityLabel="Partager ce match">
             <Ionicons name="share-social-outline" size={16} color='#000' />
@@ -2690,12 +2792,12 @@ export default function App() {
         </View>
         <View style={s.starsRow}>
           {[1,2,3,4,5].map((star)=>(
-            <TouchableOpacity key={star} onPress={()=>requestRating(selectedMatch.id,star)} disabled={ratingLoading} activeOpacity={0.7} style={s.starBtn} accessibilityRole="button" accessibilityLabel={`Donner ${star} étoile${star>1?'s':''}`}>
+            <View key={star} style={s.starBtn}>
               <Ionicons name={myRating>=star?'star':'star-outline'} size={36} color={myRating>=star?Colors.greenLight:'rgba(255,255,255,0.2)'} />
-            </TouchableOpacity>
+            </View>
           ))}
         </View>
-        <Text style={{fontSize:12, color:Colors.textMuted, textAlign:'center'}}>Appuie pour changer ta note</Text>
+        <Text style={{fontSize:12, color:Colors.green, textAlign:'center', fontWeight:'700'}}>✓ Note validée !</Text>
       </>
     ) : (
       <>
@@ -2703,7 +2805,7 @@ export default function App() {
           <Ionicons name="star" size={20} color={Colors.greenLight} />
           <Text style={s.ratingTitle}>Note ce match</Text>
         </View>
-        <Text style={s.ratingSubtitle}>Fair-play, organisation, ambiance</Text>
+        <Text style={s.ratingSubtitle}>Fair-play, intensité, ambiance</Text>
         <View style={s.starsRow}>
           {[1,2,3,4,5].map((star)=>(
             <TouchableOpacity key={star} onPress={()=>requestRating(selectedMatch.id,star)} disabled={ratingLoading} activeOpacity={0.7} style={s.starBtn} accessibilityRole="button" accessibilityLabel={`Donner ${star} étoile${star>1?'s':''}`}>
@@ -2711,7 +2813,6 @@ export default function App() {
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={s.ratingHint}>Ta note améliore la réputation de l'organisateur</Text>
       </>
     )}
   </View>
@@ -2750,7 +2851,7 @@ export default function App() {
           )}
           {matchPlayers.map((p:any,i:number)=>(
             <TouchableOpacity key={p.user?.id??i} style={s.playerRow} activeOpacity={0.75}
-              onPress={() => { if (p.user?.id && p.user.id !== currentUser?.id) { seedPlayerCache({ id: p.user.id, pseudo: p.user.pseudo ?? 'Joueur', reputation: p.user.reputation_score ?? 0, matchesPlayed: p.user.display_matches_played ?? 0 }); setSelectedPlayer(p.user.id); setScreen('player_profile'); } }}
+              onPress={() => { if (p.user?.id && p.user.id !== currentUser?.id) { seedPlayerCache({ id: p.user.id, pseudo: p.user.pseudo ?? 'Joueur', reputation: p.user.reputation_score ?? 0, matchesPlayed: p.user.display_matches_played ?? 0 }); setSelectedPlayer(p.user.id); setProfileOriginScreen(screen); setScreen('player_profile'); } }}
               accessibilityRole="button" accessibilityLabel={`Voir le profil de ${p.user?.pseudo??'ce joueur'}`}>
               <View style={s.playerAvatar}><Text style={s.playerAvatarText}>{(p.user?.pseudo??'?')[0].toUpperCase()}</Text></View>
               <View style={{flex:1}}>
@@ -2771,6 +2872,7 @@ export default function App() {
               <Ionicons name="share-outline" size={15} color={Colors.green} />
             </TouchableOpacity>
           )}
+          <Copyright />
           <View style={{height:140}} />
         </ScrollView>
         {!isPast&&(<View style={s.detailCTA}>
@@ -3359,8 +3461,8 @@ export default function App() {
                 const isMe = item.user_id===currentUser?.id;
                 return (
                   <View style={[s.msgWrap, isMe&&s.msgWrapMe]}>
-                    {!isMe&&<TouchableOpacity onPress={()=>{ seedPlayerCache({ id: item.user_id, pseudo: item.user?.pseudo ?? 'Joueur', reputation: item.user?.reputation_score ?? 0 }); setSelectedPlayer(item.user_id); setScreen('player_profile'); }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
-                    <TouchableOpacity onLongPress={()=>handleMessageLongPressStoreReady(item, 'community')} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Message" accessibilityHint="Maintenez appuyé pour signaler">
+                    {!isMe&&<TouchableOpacity onPress={()=>{ seedPlayerCache({ id: item.user_id, pseudo: item.user?.pseudo ?? 'Joueur', reputation: item.user?.reputation_score ?? 0 }); setSelectedPlayer(item.user_id); setProfileOriginScreen(screen); setScreen('player_profile'); }} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.user?.pseudo??'ce joueur'}`}><Text style={[s.msgSender,{textDecorationLine:'underline'}]}>{item.user?.pseudo??'?'}</Text></TouchableOpacity>}
+                    <TouchableOpacity onLongPress={()=>handleMessageLongPressStoreReady(item, 'community')} activeOpacity={1} accessibilityRole="button" accessibilityLabel="Appui long pour signaler ce message" accessibilityHint="Maintenez appuyé pour signaler">
                       <View style={[s.msgBubble, isMe&&s.msgBubbleMe]}>
                         <Text style={[s.msgText, isMe&&s.msgTextMe]}>{item.content}</Text>
                       </View>
@@ -3422,7 +3524,7 @@ export default function App() {
           </View>
         ):(
           <View style={s.homeHeader}>
-            <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.app');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
+            <TouchableOpacity onPress={()=>{Alert.alert('📧 Contact / Partenariat','Tu as une idée pour améliorer FootMatch ou tu veux devenir partenaire ?\n\nEnvoie-nous un message à : contact@footmatch.io');}} accessibilityRole="button" accessibilityLabel="Nous contacter ou devenir partenaire">
               <View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="mail-outline" size={11} color={Colors.textMuted} /><Text style={{fontSize:11, color:Colors.textMuted, fontWeight:'600'}}>Contact</Text></View>
             </TouchableOpacity>
             <Animated.View style={[s.homeLogoWrap, { opacity: homeLogoFade }]} pointerEvents="none">
@@ -3472,7 +3574,7 @@ export default function App() {
         )}
 
         <ScrollView style={s.list} showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{loadMatches(true);loadLiveStats();}} tintColor={Colors.green} />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async ()=>{ await loadMatches(true); loadLiveStats(); }} tintColor={Colors.green} />}>
 
           {/* ── HERO CTA ROW ── */}
           {!showSearch&&(
@@ -3530,7 +3632,7 @@ export default function App() {
                 <View style={s.heroCardInfo}>
                   <View style={{flexDirection:'row', alignItems:'center', gap:5}}>
                     <Ionicons name="location-outline" size={13} color={Colors.textMuted} />
-                    <Text style={s.heroCardInfoText}>{heroMatch.venue?.name ?? heroMatch.venue_name ?? 'Terrain'}{hDist?` · ${hDist} km`:''}</Text>
+                    <Text style={s.heroCardInfoText}>{heroMatch.venue?.name ?? heroMatch.venue_name ?? 'Terrain'}{(() => { const parts = [heroMatch.venue_postal, heroMatch.venue?.city ?? heroMatch.venue_city].filter(Boolean); return parts.length ? ` · ${parts.join(' · ')}` : ''; })()}</Text>
                   </View>
                   <View style={{flexDirection:'row', alignItems:'center', gap:5}}>
                     <Ionicons name="time-outline" size={13} color={Colors.textMuted} />
@@ -3658,13 +3760,13 @@ export default function App() {
 
                   {/* Info row */}
                   <View style={{flexDirection:'row', alignItems:'center', gap:12, marginBottom:10}}>
-                    <View style={{flexDirection:'row', alignItems:'center', gap:4}}>
-                      <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-                      <Text style={s.cardInfoText2}>{m.venue?.name ?? m.venue_name ?? 'Terrain'}{(m.venue_postal ?? m.venue?.postal_code) ? ` · ${m.venue_postal ?? m.venue?.postal_code}` : ''}{dist ? ` · ${dist.toFixed(1)}km` : ''}</Text>
+                    <View style={{flexDirection:'row', alignItems:'center', gap:4, flex:1, minWidth:0}}>
+                      <Ionicons name="location-outline" size={12} color={Colors.textMuted} style={{flexShrink:0}} />
+                      <Text style={s.cardInfoText2} numberOfLines={1} ellipsizeMode="tail">{m.venue?.name ?? m.venue_name ?? 'Terrain'}{(() => { const parts = [m.venue_postal, m.venue?.city ?? m.venue_city].filter(Boolean); return parts.length ? ` · ${parts.join(' · ')}` : ''; })()}</Text>
                     </View>
-                    <View style={{flexDirection:'row', alignItems:'center', gap:4}}>
+                    <View style={{flexDirection:'row', alignItems:'center', gap:4, flexShrink:0}}>
                       <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
-                      <Text style={s.cardInfoText2}>{isTodayMatch?'Auj.':matchDate.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} {matchDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</Text>
+                      <Text style={s.cardInfoText2} numberOfLines={1}>{isTodayMatch?'Auj.':matchDate.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} {matchDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</Text>
                     </View>
                   </View>
 
@@ -3688,6 +3790,7 @@ export default function App() {
               </TouchableOpacity>
             );
           })}
+          <Copyright />
           <View style={{height:130}} />
         </ScrollView>
 
@@ -3702,9 +3805,9 @@ export default function App() {
     <ScrollView style={s.container} contentContainerStyle={s.contentPad} keyboardShouldPersistTaps="handled">
       <View style={s.authHero}>
         <Image source={require('./assets/logo footmatch transparent.png')} style={s.authLogo} resizeMode="contain" />
-        <Text style={s.authTagline}>La plateforme N°1{'\n'}du football amateur</Text>
+        <Text style={s.authTagline}>La plateforme N°1{'\n'}du Foot Loisirs</Text>
         <View style={s.authStatRow}>
-          <View style={s.authStat}><Text style={s.authStatN}>+1000</Text><Text style={s.authStatL}>joueurs</Text></View>
+          <View style={s.authStat}><Text style={s.authStatN}>⚡ 30s</Text><Text style={s.authStatL}>pour jouer</Text></View>
           <View style={s.authStatDiv} />
           <View style={s.authStat}><Text style={s.authStatN}>100%</Text><Text style={s.authStatL}>gratuit</Text></View>
           <View style={s.authStatDiv} />
@@ -3818,14 +3921,14 @@ export default function App() {
           { icon:'flash' as IoniconName,      label:'Trouve un match en 30 secondes' },
           { icon:'chatbubbles' as IoniconName, label:'Chat avec les joueurs'          },
           { icon:'location' as IoniconName,    label:'Matchs près de chez toi'        },
-          { icon:'star' as IoniconName,        label:'Système de notation fair-play'  },
         ].map(f=>(
-          <View key={f.label} style={{flexDirection:'row',alignItems:'center',gap:8,marginBottom:4}}>
+          <View key={f.label} style={{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,marginBottom:4}}>
             <Ionicons name={f.icon} size={15} color={Colors.green} />
             <Text style={s.authFeature}>{f.label}</Text>
           </View>
         ))}
       </View>
+      <Copyright />
     </ScrollView>
   );
 }
@@ -4197,14 +4300,6 @@ const s = StyleSheet.create({
   cardFUTBtnSub:     { fontSize:11, color:Colors.textMuted, marginTop:2 },
   cardFUTBtnArrow:   { fontSize:18, color:'#FBBF24', fontWeight:'700' },
 
-  // Bouton Compétitions teaser (page Communauté)
-  competitionsTeaser:         { flexDirection:'row', alignItems:'center', gap:14, marginHorizontal:Spacing.xl, marginTop:8, marginBottom:4, backgroundColor:'rgba(255,255,255,0.03)', borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.06)', padding:14 },
-  competitionsTeaserIcon:     { width:42, height:42, borderRadius:21, backgroundColor:'rgba(255,255,255,0.07)', alignItems:'center', justifyContent:'center' },
-  competitionsTeaserTitle:    { fontSize:14, fontWeight:'700', color:Colors.textMuted },
-  competitionsTeaserSub:      { fontSize:12, color:Colors.textDim, marginTop:2 },
-  competitionsTeaserBadge:    { paddingHorizontal:10, paddingVertical:4, borderRadius:10, backgroundColor:'rgba(255,255,255,0.07)', borderWidth:1, borderColor:'rgba(255,255,255,0.1)' },
-  competitionsTeaserBadgeText:{ fontSize:11, fontWeight:'700', color:Colors.textMuted, letterSpacing:0.5 },
-
   statsGrid:         { flexDirection:'row', flexWrap:'wrap', padding:Spacing.xl, gap:10 },
   statCard:          { width:'47%', backgroundColor:'rgba(255,255,255,0.08)', borderRadius:Radius.lg, padding:16, borderWidth:1, borderColor:'rgba(255,255,255,0.15)', alignItems:'center' },
   statCardN:         { fontSize:32, fontWeight:'900', color:Colors.green },
@@ -4272,7 +4367,7 @@ const s = StyleSheet.create({
   authStatN:         { fontSize:16, fontWeight:'900', color:Colors.green },
   authStatL:         { fontSize:10, color:Colors.textMuted, textTransform:'uppercase', letterSpacing:0.5 },
   authStatDiv:       { width:1, height:32, backgroundColor:'rgba(255,255,255,0.08)' },
-  authFeatures:      { marginTop:Spacing['2xl'], gap:12, paddingBottom:40 },
+  authFeatures:      { marginTop:Spacing['2xl'], gap:12, paddingBottom:40, alignItems:'center' },
   authFeature:       { fontSize:15, color:Colors.textMuted, textAlign:'center' },
 
   // Radar toggle
@@ -4378,28 +4473,32 @@ const cs = StyleSheet.create({
   chipText:         { fontSize:13, fontWeight:'600', color:Colors.textMuted },
   chipTextOn:       { color:Colors.green },
 
-  dtCard:           { flex:1, backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:14 },
-  dtCardFilled:     { borderColor:Colors.green, backgroundColor:Colors.greenDim },
-  dtTag:            { fontSize:11, color:Colors.textMuted, marginBottom:4 },
-  dtVal:            { fontSize:15, fontWeight:'700', color:Colors.text },
-  dtValEmpty:       { color:Colors.textMuted, fontWeight:'400' },
-  dtChevron:        { position:'absolute', right:12, top:14, fontSize:18, color:Colors.textMuted },
+  // Create screen — input
+  inputBox:         { flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg3, borderRadius:Radius.md, paddingHorizontal:14, paddingVertical:12, borderWidth:1, borderColor:Colors.border, marginBottom:10 },
+  inputField:       { flex:1, color:Colors.text, fontSize:15, fontWeight:'600' },
 
-  inputBox:         { flexDirection:'row', alignItems:'center', backgroundColor:Colors.card, borderRadius:12, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', paddingHorizontal:14, paddingVertical:12, gap:8 },
-  inputField:       { flex:1, color:Colors.text, fontSize:15, fontWeight:'500', minHeight:20 },
-  manualLabel:      { fontSize:11, color:Colors.textMuted, fontWeight:'600', letterSpacing:0.5, minWidth:68 },
+  // Date/time cards
+  dtCard:           { flex:1, backgroundColor:Colors.bg3, borderRadius:Radius.md, paddingHorizontal:14, paddingVertical:12, borderWidth:1, borderColor:Colors.border, gap:4 },
+  dtCardFilled:     { borderColor:Colors.greenBorder, backgroundColor:Colors.greenDim },
+  dtTag:            { fontSize:11, color:Colors.textMuted, fontWeight:'700', letterSpacing:0.5 },
+  dtVal:            { fontSize:14, fontWeight:'800', color:Colors.text },
+  dtValEmpty:       { color:Colors.textMuted, fontWeight:'600' },
+  dtChevron:        { fontSize:20, color:Colors.textMuted, alignSelf:'flex-end' as any },
 
-  pitchMini:        { backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:16, gap:12 },
-  pitchMiniLabel:   { fontSize:13, fontWeight:'700', color:Colors.textMuted },
+  // Terrain mini card
+  pitchMini:        { backgroundColor:Colors.bg3, borderRadius:Radius.md, padding:14, borderWidth:1, borderColor:Colors.border, marginBottom:10 },
+  pitchMiniLabel:   { fontSize:12, color:Colors.textMuted, fontWeight:'600' },
 
-  playersWidget:    { backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:16, flexDirection:'row', alignItems:'center', gap:16 },
-  playersNum:       { fontSize:42, fontWeight:'900', color:Colors.green, lineHeight:48 },
-  playersLabel:     { fontSize:12, color:Colors.textMuted, fontWeight:'600', marginBottom:8 },
-  progressBar:      { height:4, backgroundColor:'rgba(255,255,255,0.08)', borderRadius:2, overflow:'hidden' },
+  // Players widget
+  playersWidget:    { flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg3, borderRadius:Radius.md, padding:16, borderWidth:1, borderColor:Colors.border, gap:16, marginBottom:10 },
+  playersNum:       { fontSize:48, fontWeight:'900', color:Colors.green, lineHeight:52 },
+  playersLabel:     { fontSize:12, color:Colors.textMuted, fontWeight:'600', marginTop:2 },
+  progressBar:      { height:4, backgroundColor:Colors.bg2, borderRadius:2, marginTop:8, overflow:'hidden' as any },
   progressFill:     { height:4, backgroundColor:Colors.green, borderRadius:2 },
-  counterBtn:       { width:44, height:44, borderRadius:22, backgroundColor:Colors.greenDim, borderWidth:1, borderColor:Colors.green, alignItems:'center', justifyContent:'center' },
-  counterBtnText:   { fontSize:22, fontWeight:'900', color:Colors.green, lineHeight:26 },
+  counterBtn:       { width:44, height:44, borderRadius:Radius.md, backgroundColor:Colors.bg2, borderWidth:1, borderColor:Colors.border, alignItems:'center', justifyContent:'center' },
+  counterBtnText:   { fontSize:24, fontWeight:'700', color:Colors.text, lineHeight:28 },
 
+  // Price options
   priceOpt:         { flex:1, flexDirection:'row', alignItems:'center', gap:12, backgroundColor:Colors.card, borderRadius:14, borderWidth:1.5, borderColor:'rgba(255,255,255,0.08)', padding:14 },
   priceOptOn:       { borderColor:Colors.green, backgroundColor:Colors.greenDim },
   priceOptTitle:    { fontSize:14, fontWeight:'700', color:Colors.text },
@@ -4428,7 +4527,7 @@ const cs = StyleSheet.create({
   calNavBtnText:    { fontSize:20, color:Colors.green, fontWeight:'700', lineHeight:24 },
   calMonthName:     { fontSize:16, fontWeight:'800', color:Colors.text },
   calDayHead:       { flex:1, textAlign:'center', fontSize:12, fontWeight:'700', color:Colors.textMuted, marginBottom:4 },
-  calCell:          { width:'14.28%', aspectRatio:1, alignItems:'center', justifyContent:'center', padding:2 },
+  calCell:          { width:'14.28%' as any, aspectRatio:1, alignItems:'center', justifyContent:'center', padding:2 },
   calDayInner:      { width:34, height:34, borderRadius:17, alignItems:'center', justifyContent:'center' },
   calDaySel:        { backgroundColor:Colors.green },
   calDayText:       { fontSize:14, fontWeight:'600', color:Colors.text },

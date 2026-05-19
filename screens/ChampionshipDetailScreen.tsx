@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors, Spacing, Radius } from '../constants/theme';
+import Copyright from '../components/Copyright';
 
 interface Team {
   id: string;
@@ -529,6 +530,7 @@ export default function ChampionshipDetailScreen({ championship, currentUserId, 
           </View>
         )}
 
+        <Copyright />
         <View style={{ height: 80 }} />
       </ScrollView>
 
@@ -731,5 +733,5 @@ const s = StyleSheet.create({
   keyboardCloseBtnText: { fontSize: 12, color: Colors.green, fontWeight: '800' },
   scoreTeamsRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   scoreTeamLabel: { flex: 1, fontSize: 14, fontWeight: '700', color: Colors.text, textAlign: 'right' },
-  scoreField: { width: 64, backgroundColor: Colors.bg3, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.green, color: Colors.green, fontSize: 28, fontWeight: '900', textAlign: 'center', paddingVertical: 10 },
+  scoreField:     { width: 52, height: 52, borderRadius: 8, backgroundColor: Colors.bg3, borderWidth: 2, borderColor: Colors.border, textAlign: 'center', fontSize: 24, fontWeight: '900', color: Colors.text },
 });

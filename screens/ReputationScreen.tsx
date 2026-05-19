@@ -5,6 +5,7 @@ import { Colors, Spacing, Radius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import ReputationBadge, { RANK_CONFIG, LEVEL_THRESHOLDS, getLevelFromScore, getLevelProgress, getLevelConfig, TIER_COLOR } from '../components/ReputationBadge';
 import { fetchComputedStatsForUsers, getDisplayReputationScore, isLaunchCommunityProfile } from '../lib/playerStats';
+import Copyright from '../components/Copyright';
 type ReputationRank = string;
 
 const RANK_THRESHOLDS = LEVEL_THRESHOLDS.map((t, i, arr) => ({
@@ -328,6 +329,7 @@ export default function ReputationScreen({ userId, currentUserId, onBack }: Prop
             </View>
           )}
           <View style={{ height:40 }} />
+          <Copyright />
         </>}
       </ScrollView>
     </View>
@@ -368,6 +370,6 @@ const s = StyleSheet.create({
   leaderRowMe:    { borderColor:Colors.greenBorder, backgroundColor:Colors.greenDim },
   leaderAvatar:   { width:40, height:40, borderRadius:20, backgroundColor:Colors.bg3, borderWidth:2, alignItems:'center', justifyContent:'center' },
   leaderAvatarText:{ fontSize:16, fontWeight:'900' },
-  leaderName:     { fontSize:14, fontWeight:'700', color:Colors.text, textTransform:'uppercase' },
-  leaderScore:    { fontSize:22, fontWeight:'900' },
+  leaderName:      { fontSize:14, fontWeight:'800', color:Colors.text },
+  leaderScore:     { fontSize:18, fontWeight:'900', color:Colors.text, minWidth:36, textAlign:'right' },
 });

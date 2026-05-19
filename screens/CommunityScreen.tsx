@@ -3,30 +3,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, KeyboardAvoidingView, Platform,
-  Pressable, Animated, Keyboard, ActivityIndicator,
+  Animated, Keyboard, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
-import { Colors, Radius } from '../constants/theme';
+import { Colors, Radius, Spacing } from '../constants/theme';
+import Copyright from '../components/Copyright';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Message {
   id:         string;
+  userId?:    string;   // ID Supabase de l'auteur (absent pour les messages fallback)
   username:   string;
   content:    string;
   created_at: string;
-  isSystem?:  boolean;
 }
-
-// Message système d'accroche, affiché en tête de liste tant que le chat tourne.
-const SYSTEM_MESSAGE: Message = {
-  id:         'msg-sys-live',
-  username:   'FootMatch',
-  content:    '⚽ Plusieurs matchs ouverts cette semaine — trouve le tien !',
-  created_at: new Date().toISOString(),
-  isSystem:   true,
-};
 
 // Fallback affiché si la table community_messages est vide (pré-launch)
 const FALLBACK_MESSAGES: Message[] = [
@@ -55,20 +47,18 @@ function timeAgo(iso: string): string {
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface Props {
-  onJoinMatch?: (id: string) => void;
-  onNavigate?: (screen: string, filter?: string) => void;
+  onViewProfile?:  (playerId: string) => void;
 }
 
 // ─── Composant ────────────────────────────────────────────────────────────────
-export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
+export default function CommunityScreen({ onViewProfile }: Props) {
   const { currentUser } = useStore();
   const myPseudo = currentUser?.pseudo ?? 'Moi';
 
-  const [messages, setMessages] = useState<Message[]>([SYSTEM_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [input, setInput]       = useState('');
   const listRef                 = useRef<FlatList>(null);
-  const sysScale                = useRef(new Animated.Value(1)).current;
   const listOpacity             = useRef(new Animated.Value(0)).current;
   const initialScrollDone       = useRef(false);
 
@@ -88,11 +78,12 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
       if (!error && data) {
         const mapped: Message[] = data.map((m: any) => ({
           id:         m.id,
+          userId:     m.user?.id ?? undefined,
           username:   m.user?.pseudo ?? 'Joueur',
           content:    m.content,
           created_at: m.created_at,
         }));
-        setMessages([SYSTEM_MESSAGE, ...(mapped.length > 0 ? mapped : FALLBACK_MESSAGES)]);
+        setMessages(mapped.length > 0 ? mapped : FALLBACK_MESSAGES);
       }
 
       if (!cancelled) setLoadingMessages(false);
@@ -109,6 +100,7 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
 
     const msg: Message = {
       id:         Date.now().toString(),
+      userId:     currentUser?.id,
       username:   myPseudo,
       content:    text,
       created_at: new Date().toISOString(),
@@ -125,52 +117,13 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
     });
   }
 
-  // ── Animation message système ──────────────────────────────────────────────
-  function onSysPressIn() {
-    Animated.spring(sysScale, { toValue: 0.95, useNativeDriver: true, speed: 30 }).start();
-  }
-  function onSysPressOut() {
-    Animated.spring(sysScale, { toValue: 1, useNativeDriver: true, speed: 20 }).start();
-  }
-  function onSysPress() {
-    onNavigate?.('home', 'urgent');
-  }
-
   // ── Rendu bulle ────────────────────────────────────────────────────────────
   function renderItem({ item, index }: { item: Message; index: number }) {
-    // Message système
-    if (item.isSystem) {
-      return (
-        <Pressable
-          onPress={onSysPress}
-          onPressIn={onSysPressIn}
-          onPressOut={onSysPressOut}
-          accessibilityRole="button"
-          accessibilityLabel="Rejoindre un match maintenant"
-        >
-          <Animated.View style={[s.sysRow, { transform: [{ scale: sysScale }] }]}>
-            {/* Badge LIVE */}
-            <View style={s.sysBadgeRow}>
-              <View style={s.sysLiveDot} />
-              <Text style={s.sysLiveText}>EN DIRECT</Text>
-            </View>
-            {/* Contenu */}
-            <Text style={s.sysText}>{item.content}</Text>
-            {/* CTA */}
-            <View style={s.sysCtaRow}>
-              <Text style={s.sysCtaText}>Rejoindre un match</Text>
-              <Ionicons name="arrow-forward" size={13} color={Colors.green} />
-            </View>
-          </Animated.View>
-        </Pressable>
-      );
-    }
-
     const isMe = item.username === myPseudo;
 
     // Afficher le pseudo seulement si le message précédent vient d'un autre
     const prev = messages[index - 1];
-    const showName = !isMe && (!prev || prev.username !== item.username || prev.isSystem);
+    const showName = !isMe && (!prev || prev.username !== item.username);
 
     if (isMe) {
       return (
@@ -189,7 +142,13 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
           <Text style={s.avatarLetter}>{item.username[0].toUpperCase()}</Text>
         </View>
         <View style={s.bubbleLeft}>
-          {showName && <Text style={s.bubbleName}>{item.username}</Text>}
+          {showName && (
+            item.userId && onViewProfile
+              ? <TouchableOpacity onPress={() => onViewProfile(item.userId!)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={`Voir le profil de ${item.username}`}>
+                  <Text style={s.bubbleName}>{item.username}</Text>
+                </TouchableOpacity>
+              : <Text style={s.bubbleName}>{item.username}</Text>
+          )}
           <Text style={s.textLeft}>{item.content}</Text>
           <Text style={s.timeLeft}>{timeAgo(item.created_at)}</Text>
         </View>
@@ -238,6 +197,7 @@ export default function CommunityScreen({ onJoinMatch, onNavigate }: Props) {
             <Text style={s.emptyHint}>Le chat de la communauté FootMatch</Text>
           </View>
         }
+        ListFooterComponent={<Copyright />}
       />
       </Animated.View>
       )}
@@ -293,66 +253,6 @@ const s = StyleSheet.create({
   emptyEmoji: { fontSize: 46 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
   emptyHint:  { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 19 },
-
-  // ── Message système / CTA ─────────────────────────────────────────────────────
-  sysRow: {
-    alignSelf: 'center',
-    marginVertical: 10,
-    backgroundColor: 'rgba(0,230,118,0.10)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.greenBorder,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
-    maxWidth: '88%',
-    gap: 6,
-  },
-  // Badge LIVE
-  sysBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  sysLiveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: Colors.green,
-  },
-  sysLiveText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.green,
-    letterSpacing: 1.2,
-  },
-  // Texte principal
-  sysText: {
-    fontSize: 13,
-    color: Colors.text,
-    textAlign: 'center',
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  // Bouton bas
-  sysCtaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 2,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: Colors.greenBorder,
-  },
-  sysCtaText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.green,
-    letterSpacing: 0.2,
-  },
-  sysArrow: { fontSize: 11, color: Colors.green, textAlign: 'center', marginTop: 3, opacity: 0.7, fontWeight: '700', letterSpacing: 0.3 },
 
   // ── Mes messages (droite) ────────────────────────────────────────────────────
   rowRight: {
@@ -410,36 +310,8 @@ const s = StyleSheet.create({
   timeLeft:   { fontSize: 10, color: Colors.textMuted, marginTop: 3 },
 
   // ── Barre input ──────────────────────────────────────────────────────────────
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 12 : 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    backgroundColor: Colors.bg,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.bg3,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnOff: {
-    backgroundColor: Colors.bg3,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
+  inputBar:   { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, paddingBottom: 20, backgroundColor: Colors.bg, borderTopWidth: 1, borderTopColor: Colors.border, gap: 8 },
+  input:      { flex: 1, backgroundColor: Colors.bg2, borderRadius: Radius.lg, paddingHorizontal: 14, paddingVertical: 10, color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border, maxHeight: 100 },
+  sendBtn:    { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  sendBtnOff: { backgroundColor: Colors.bg3, borderWidth: 1, borderColor: Colors.border },
 });

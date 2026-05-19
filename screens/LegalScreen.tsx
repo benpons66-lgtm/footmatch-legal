@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Platform } from 'react-native';
 import { Colors, Spacing, Radius } from '../constants/theme';
+import Copyright from '../components/Copyright';
 
 const PRIVACY_POLICY = `POLITIQUE DE CONFIDENTIALITE
 Derniere mise a jour : mars 2026
@@ -112,6 +113,7 @@ export default function LegalScreen({ onBack }: { onBack: () => void }) {
 
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={s.legalText}>{tab === 'privacy' ? PRIVACY_POLICY : CGU}</Text>
+        <Copyright />
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -131,5 +133,5 @@ const s = StyleSheet.create({
   tabTextActive:  { color: Colors.green },
   scroll:         { flex: 1 },
   scrollContent:  { padding: Spacing.xl, paddingTop: Spacing.lg },
-  legalText:      { fontSize: 13, color: Colors.textMuted, lineHeight: 22, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  legalText:      { fontSize: 13, color: Colors.textMuted, lineHeight: 20 },
 });

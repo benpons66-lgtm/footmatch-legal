@@ -14,7 +14,7 @@ const PERKS = [
   { icon: 'flash',        text: 'Rejoindre un match en 1 tap',          color: Colors.green  },
   { icon: 'add-circle',   text: 'Créer tes propres matchs',              color: '#3B82F6'     },
   { icon: 'chatbubbles',  text: 'Chatter avec les joueurs',              color: '#8B5CF6'     },
-  { icon: 'trophy',       text: 'Créer et rejoindre des championnats',   color: Colors.yellow },
+  { icon: 'trophy',       text: 'Suivre les classements et réputation',   color: Colors.yellow },
   { icon: 'star',         text: 'Développer ta réputation',              color: '#F97316'     },
 ];
 

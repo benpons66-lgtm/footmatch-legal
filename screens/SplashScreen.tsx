@@ -164,13 +164,12 @@ export default function SplashScreen({ onFinish }: Props) {
         </View>
 
         <Animated.View style={[s.logoWrap, { opacity:logoOpacity, transform:[{ scale:logoScale },{ translateY:logoY }] }]}>
-          <Text style={s.logoText}>FOOT<Text style={s.logoGreen}>MATCH</Text></Text>
-          <Text style={s.logoBall}>⚽</Text>
+          <Image source={require('../assets/logo footmatch transparent.png')} style={s.logoImg} resizeMode="contain" />
         </Animated.View>
 
         <Animated.View style={[s.taglineWrap, { opacity:taglineOpacity, transform:[{ translateY:taglineY }] }]}>
           <Text style={s.tagline}>TON TERRAIN. TON MATCH.</Text>
-          <Text style={s.taglineSub}>LA LÉGENDE COMMENCE ICI</Text>
+          <Text style={s.taglineSub}>PLUS JAMAIS DE GALÈRE DE MATCHS</Text>
         </Animated.View>
 
         <Animated.View style={[s.ctaWrap, { opacity:ctaOpacity }]}>
@@ -222,9 +221,7 @@ const s = StyleSheet.create({
   lineRight:     { width:80, height:1, backgroundColor:'rgba(0,255,102,0.5)' },
   lineDot:       { width:6, height:6, borderRadius:3, backgroundColor:'#00FF66' },
   logoWrap:      { alignItems:'center', marginBottom:20 },
-  logoText:      { fontSize:52, fontWeight:'900', color:'#fff', letterSpacing:4 },
-  logoGreen:     { color:'#00FF66' },
-  logoBall:      { fontSize:28, marginTop:4 },
+  logoImg:       { width:260, height:100 },
   taglineWrap:   { alignItems:'center', gap:6 },
   tagline:       { fontSize:13, fontWeight:'900', color:'rgba(255,255,255,0.9)', letterSpacing:4 },
   taglineSub:    { fontSize:10, color:'rgba(0,255,102,0.7)', letterSpacing:3 },
