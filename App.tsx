@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScrollView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, RefreshControl, Switch, Share, FlatList, KeyboardAvoidingView, Platform, StatusBar, Image, Dimensions, ActivityIndicator, Modal, Animated, Keyboard, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
@@ -87,6 +88,7 @@ function BottomNav({ active, onNavigate, toRateCount, onCreateMatch }: {
   toRateCount: number;
   onCreateMatch: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const leftTabs: { key: string; icon: IoniconName; iconActive: IoniconName; label: string }[] = [
     { key:'home',    icon:'football-outline', iconActive:'football', label:'Matchs'  },
     { key:'players', icon:'people-outline',   iconActive:'people',   label:'Joueurs' },
@@ -96,7 +98,7 @@ function BottomNav({ active, onNavigate, toRateCount, onCreateMatch }: {
     { key:'profile',   icon:'person-outline',      iconActive:'person',      label:'Profil'     },
   ];
   return (
-    <View style={nav.bar}>
+    <View style={[nav.bar, { paddingBottom: insets.bottom + 8 }]}>
       {leftTabs.map(t => {
         const isActive = active === t.key;
         return (
@@ -139,14 +141,14 @@ function BottomNav({ active, onNavigate, toRateCount, onCreateMatch }: {
 }
 
 const nav = StyleSheet.create({
-  bar:         { flexDirection:'row', alignItems:'flex-end', backgroundColor:'#060B06', borderTopWidth:1, borderTopColor:'rgba(255,255,255,0.07)', paddingBottom:Platform.OS==='ios'?26:12, paddingTop:8, paddingHorizontal:4 },
+  bar:         { flexDirection:'row', alignItems:'flex-end', backgroundColor:'#060B06', borderTopWidth:1, borderTopColor:'rgba(255,255,255,0.07)', paddingTop:8, paddingHorizontal:4 },
   tab:         { flex:1, alignItems:'center', gap:2, paddingBottom:2 },
   iconWrap:    { width:44, height:34, borderRadius:17, alignItems:'center', justifyContent:'center' },
   iconWrapActive: { backgroundColor:'rgba(0,255,102,0.10)' },
   label:       { fontSize:9, fontWeight:'600', color:'rgba(255,255,255,0.28)', textTransform:'uppercase', letterSpacing:0.4 },
   labelActive: { color:'#00FF66' },
-  badge:       { position:'absolute', top:-2, right:-2, width:14, height:14, borderRadius:7, backgroundColor:'#00A854', alignItems:'center', justifyContent:'center', borderWidth:2, borderColor:'#060B06' },
-  badgeText:   { color:'#fff', fontSize:7, fontWeight:'900' },
+  badge:       { position:'absolute', top:-5, right:-5, minWidth:18, height:18, borderRadius:9, backgroundColor:'#FF3B30', alignItems:'center', justifyContent:'center', borderWidth:2, borderColor:'#060B06', paddingHorizontal:3, shadowColor:'#FF3B30', shadowOpacity:0.6, shadowRadius:4, elevation:4 },
+  badgeText:   { color:'#fff', fontSize:9, fontWeight:'900', lineHeight:13 },
   // Center create button
   centerTab:   { flex:1, alignItems:'center', gap:2, marginTop:-18 },
   centerBtn:   { width:56, height:56, borderRadius:28, backgroundColor:'#00E676', alignItems:'center', justifyContent:'center', shadowColor:'#00E676', shadowRadius:12, shadowOpacity:0.55, elevation:10, borderWidth:3, borderColor:'#060B06' },
@@ -164,9 +166,11 @@ export default function App() {
   const [detailOriginScreen, setDetailOriginScreen] = useState<string>('home');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [pseudo, setPseudo] = useState('');
   const [registerCity, setRegisterCity] = useState('');
   const [registerPostalCode, setRegisterPostalCode] = useState('');
+  const [registerBirthDate, setRegisterBirthDate] = useState('');
   // Disponibilités saisies à l'inscription — format : { jour, debut, fin }[]
   const [registerDisponibilites, setRegisterDisponibilites] = useState<{jour:string;debut:string;fin:string}[]>([]);
   const [loading, setLoading] = useState(false);
@@ -233,6 +237,7 @@ export default function App() {
   const [communityMessage, setCommunityMessage] = useState('');
   const [sendingCommunityMsg, setSendingCommunityMsg] = useState(false);
   const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+  const [blockedProfiles, setBlockedProfiles] = useState<{id:string;pseudo:string}[]>([]);
   const [locationDenied, setLocationDenied] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitedPlayerId, setInvitedPlayerId] = useState<string | null>(null);
@@ -398,8 +403,20 @@ export default function App() {
       setIsConnected(state.isConnected ?? true);
     });
 
-    // ── Deep links : footmatch://match/{uuid} ou https://footmatch.app/match/{uuid}
+    // ── Deep links : footmatch://match/{uuid} ou confirmation email Supabase
     const handleDeepLink = (url: string) => {
+      // Confirmation email / magic link : footmatch://#access_token=xxx&refresh_token=yyy
+      if (url.includes('access_token') || url.includes('refresh_token')) {
+        const fragment = url.split('#')[1] ?? url.split('?')[1] ?? '';
+        const params = new URLSearchParams(fragment);
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+        if (access_token && refresh_token) {
+          supabase.auth.setSession({ access_token, refresh_token }).catch(() => {});
+        }
+        return;
+      }
+      // Deep link match : footmatch://match/{uuid}
       const m = url.match(/\/match\/([0-9a-f-]{36})/i);
       if (!m) return;
       const matchId = m[1];
@@ -442,7 +459,11 @@ export default function App() {
   async function loadBlockedUsers() {
     try {
       const raw = await AsyncStorage.getItem(BLOCKED_USERS_STORAGE_KEY);
-      if (raw) setBlockedUserIds(JSON.parse(raw));
+      const ids: string[] = raw ? JSON.parse(raw) : [];
+      if (ids.length) {
+        setBlockedUserIds(ids);
+        await loadBlockedProfiles(ids);
+      }
     } catch {}
   }
 
@@ -451,6 +472,13 @@ export default function App() {
     try {
       await AsyncStorage.setItem(BLOCKED_USERS_STORAGE_KEY, JSON.stringify(nextBlockedUsers));
     } catch {}
+    await loadBlockedProfiles(nextBlockedUsers);
+  }
+
+  async function loadBlockedProfiles(ids: string[]) {
+    if (!ids.length) { setBlockedProfiles([]); return; }
+    const { data } = await supabase.from('profiles').select('id, pseudo').in('id', ids);
+    if (data) setBlockedProfiles(data as {id:string;pseudo:string}[]);
   }
 
   function moderateText(content: string): boolean {
@@ -518,7 +546,7 @@ export default function App() {
       const { granted } = await Notifications.getPermissionsAsync();
       if (!granted) return;
       const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: 'footmatch-app', // eas.json extra.eas.projectId — remplacer par l'UUID EAS réel avant prod
+        projectId: '11533541-9450-49bc-adec-b19b7ea401c9',
       });
       const token = tokenData.data;
       if (token) {
@@ -568,7 +596,10 @@ export default function App() {
         setLocationDenied(true);
         return false;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const loc = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+      ]);
       const { latitude, longitude } = loc.coords;
       setUserLocation({ latitude, longitude });
       setLocationDenied(false);
@@ -1154,17 +1185,36 @@ export default function App() {
           }
         }
       } catch { /* best-effort : ne bloque pas le login */ }
+      // Appliquer la date de naissance en attente
+      try {
+        const bdKey = `@footmatch_pending_birth_date_${data.user.email}`;
+        const bd = await AsyncStorage.getItem(bdKey);
+        if (bd) {
+          await supabase.from('profiles').update({ birth_date: bd }).eq('id', data.user.id);
+          await AsyncStorage.removeItem(bdKey);
+        }
+      } catch { /* best-effort : ne bloque pas le login */ }
       setScreen('home');
     } catch (e:any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
   }
 
   async function handleRegister() {
-    if (!email||!password||!pseudo||!registerCity||!registerPostalCode) { Alert.alert('Erreur','Remplis tous les champs'); return; }
+    if (!email||!password||!pseudo||!registerCity||!registerPostalCode||!registerBirthDate) { Alert.alert('Erreur','Remplis tous les champs'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { Alert.alert('Erreur','Adresse email invalide'); return; }
     if (password.length < 8) { Alert.alert('Erreur','Le mot de passe doit contenir au moins 8 caractères'); return; }
     if (!consentGiven) { Alert.alert('Erreur','Tu dois accepter les CGU et la politique de confidentialité pour créer un compte.'); return; }
     if (!ensureCleanContent(pseudo, 'ce pseudo')) return;
+    // Validation date de naissance JJ/MM/AAAA
+    const bdParts = registerBirthDate.split('/');
+    if (bdParts.length !== 3 || bdParts[0].length !== 2 || bdParts[1].length !== 2 || bdParts[2].length !== 4) {
+      Alert.alert('Erreur', 'Date de naissance invalide. Format attendu : JJ/MM/AAAA'); return;
+    }
+    const birthDate = new Date(parseInt(bdParts[2]), parseInt(bdParts[1]) - 1, parseInt(bdParts[0]));
+    if (isNaN(birthDate.getTime())) { Alert.alert('Erreur', 'Date de naissance invalide'); return; }
+    const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 3600 * 1000));
+    if (age < 13) { Alert.alert('Âge requis', 'Tu dois avoir au moins 13 ans pour créer un compte.'); return; }
+    const birthDateISO = `${bdParts[2]}-${bdParts[1]}-${bdParts[0]}`;
     setLoading(true);
     try {
       const { error } = await supabase.auth.signUp({ email, password, options:{ data:{ pseudo, city: registerCity.trim(), postal_code: registerPostalCode.trim() } } });
@@ -1178,9 +1228,13 @@ export default function App() {
           );
         } catch { /* best-effort */ }
       }
+      try {
+        await AsyncStorage.setItem(`@footmatch_pending_birth_date_${email}`, birthDateISO);
+      } catch { /* best-effort */ }
       Alert.alert('Compte créé !','Tu peux maintenant te connecter.');
       setRegisterCity('');
       setRegisterPostalCode('');
+      setRegisterBirthDate('');
       setRegisterDisponibilites([]);
       setScreen('login');
     } catch (e:any) { Alert.alert('Erreur', e.message); }
@@ -1550,6 +1604,25 @@ export default function App() {
       if (data) setMatchPlayers(await enrichMatchPlayers(data));
       loadMatches();
       scheduleMatchReminder(selectedMatch.title, new Date(selectedMatch.scheduled_at), selectedMatch.id, true);
+      // Notifier l'organisateur qu'un joueur a rejoint
+      if (selectedMatch.organizer_id && selectedMatch.organizer_id !== currentUser.id) {
+        try {
+          const { data: org } = await supabase.from('profiles').select('expo_push_token').eq('id', selectedMatch.organizer_id).single();
+          if (org?.expo_push_token) {
+            await fetch('https://exp.host/--/api/v2/push/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({
+                to: org.expo_push_token,
+                title: `${currentUser.pseudo} a rejoint ton match ⚽`,
+                body: selectedMatch.title,
+                data: { type: 'player_joined', matchId: selectedMatch.id },
+                sound: 'default',
+              }),
+            });
+          }
+        } catch {} // best-effort
+      }
       Alert.alert('✅ Inscrit !','Tu es dans le match !');
     } catch (e:any) { Alert.alert('Erreur', e.message); }
     finally { setLoading(false); }
@@ -1569,6 +1642,25 @@ export default function App() {
           setMatchPlayers(prev => prev.filter((p:any) => p.user?.id !== currentUser.id));
           setSelectedMatch((prev:any) => prev ? { ...prev, current_players: newCount } : prev);
           loadMatches();
+          // Notifier l'organisateur qu'un joueur a quitté
+          if (selectedMatch.organizer_id && selectedMatch.organizer_id !== currentUser.id) {
+            try {
+              const { data: org } = await supabase.from('profiles').select('expo_push_token').eq('id', selectedMatch.organizer_id).single();
+              if (org?.expo_push_token) {
+                await fetch('https://exp.host/--/api/v2/push/send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                  body: JSON.stringify({
+                    to: org.expo_push_token,
+                    title: `${currentUser.pseudo} a quitté ton match`,
+                    body: selectedMatch.title,
+                    data: { type: 'player_left', matchId: selectedMatch.id },
+                    sound: 'default',
+                  }),
+                });
+              }
+            } catch {} // best-effort
+          }
         } catch (e:any) { Alert.alert('Erreur', e.message); }
       }}
     ]);
@@ -1799,7 +1891,10 @@ export default function App() {
     return <SplashScreen onFinish={async () => {
       const seen = await AsyncStorage.getItem('onboarding_seen');
       setShowSplash(false);
-      if (!seen && !currentUser) setShowOnboarding(true);
+      if (!seen && !currentUser) {
+        await AsyncStorage.setItem('onboarding_seen', '1');
+        setShowOnboarding(true);
+      }
     }} />;
   }
 
@@ -2633,9 +2728,12 @@ export default function App() {
           )}
 
           {toRate.length>0&&<View onLayout={(e)=>{if(scrollToRatingsRef.current){scrollToRatingsRef.current=false;const y=e.nativeEvent.layout.y;setTimeout(()=>profileScrollRef.current?.scrollTo({y,animated:true}),50);}}} style={{paddingHorizontal:Spacing.xl,marginBottom:Spacing.lg}}>
-            <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}>
-              <Ionicons name="star" size={15} color={Colors.green} />
+            <View style={{flexDirection:'row',alignItems:'center',gap:8,marginBottom:12}}>
+              <Ionicons name="star" size={15} color="#FFD700" />
               <Text style={s.sectionTitle}>À noter</Text>
+              <View style={{backgroundColor:'#FFD700', borderRadius:10, paddingHorizontal:7, paddingVertical:1, minWidth:18, alignItems:'center'}}>
+                <Text style={{fontSize:10, fontWeight:'900', color:'#000'}}>{toRate.length}</Text>
+              </View>
             </View>
             {toRate.map((m:any)=>(
               <TouchableOpacity key={m.id} style={s.rateCard} onPress={()=>loadMatchDetail(m)} accessibilityRole="button" accessibilityLabel={`Voir et noter le match ${m.title}`}>
@@ -2644,6 +2742,31 @@ export default function App() {
               </TouchableOpacity>
             ))}
           </View>}
+
+          {blockedProfiles.length > 0 && (
+            <View style={{paddingHorizontal:Spacing.xl, marginBottom:Spacing.lg}}>
+              <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:12}}>
+                <Ionicons name="ban" size={15} color={Colors.textMuted} />
+                <Text style={s.sectionTitle}>Joueurs bloqués</Text>
+                <View style={{backgroundColor:Colors.bg3, borderRadius:10, paddingHorizontal:7, paddingVertical:1, minWidth:18, alignItems:'center', borderWidth:1, borderColor:Colors.border}}>
+                  <Text style={{fontSize:10, fontWeight:'900', color:Colors.textMuted}}>{blockedProfiles.length}</Text>
+                </View>
+              </View>
+              {blockedProfiles.map(p => (
+                <View key={p.id} style={{flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg3, borderRadius:Radius.md, padding:14, borderWidth:1, borderColor:Colors.border, marginBottom:8}}>
+                  <Ionicons name="person-circle-outline" size={28} color={Colors.textMuted} style={{marginRight:10}} />
+                  <Text style={{flex:1, fontSize:14, fontWeight:'700', color:Colors.textMuted}}>{p.pseudo}</Text>
+                  <TouchableOpacity
+                    style={{paddingHorizontal:14, paddingVertical:7, borderRadius:Radius.full, backgroundColor:Colors.bg2, borderWidth:1, borderColor:Colors.border}}
+                    onPress={() => toggleBlockedUserStoreReady(p.id, p.pseudo)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Débloquer ${p.pseudo}`}>
+                    <Text style={{color:Colors.green, fontWeight:'700', fontSize:12}}>Débloquer</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
 
           {upcomingMatches.length>0&&<View style={{paddingHorizontal:Spacing.xl,marginBottom:Spacing.lg}}>
             <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}><Ionicons name="calendar" size={15} color={Colors.green} /><Text style={s.sectionTitle}>Prochains matchs</Text></View>
@@ -3819,6 +3942,7 @@ export default function App() {
         {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Pseudo</Text><TextInput style={s.input} value={pseudo} onChangeText={setPseudo} placeholder="TonPseudo" placeholderTextColor={Colors.textMuted} /></View>}
         {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Ville</Text><TextInput style={s.input} value={registerCity} onChangeText={setRegisterCity} placeholder="Paris" placeholderTextColor={Colors.textMuted} /></View>}
         {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Code postal</Text><TextInput style={s.input} value={registerPostalCode} onChangeText={setRegisterPostalCode} placeholder="75011" placeholderTextColor={Colors.textMuted} keyboardType="number-pad" maxLength={5} /></View>}
+        {screen==='register'&&<View style={s.field}><Text style={s.fieldLabel}>Date de naissance</Text><TextInput style={s.input} value={registerBirthDate} onChangeText={(t) => { const d = t.replace(/[^0-9]/g, ''); let f = d; if (d.length >= 3 && d.length < 5) f = d.slice(0,2)+'/'+d.slice(2); else if (d.length >= 5) f = d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4,8); setRegisterBirthDate(f); }} placeholder="JJ/MM/AAAA" placeholderTextColor={Colors.textMuted} keyboardType="number-pad" maxLength={10} /></View>}
 
         {/* ── DISPONIBILITÉS (optionnel) ── */}
         {screen==='register'&&(
@@ -3885,7 +4009,15 @@ export default function App() {
         )}
 
         <View style={s.field}><Text style={s.fieldLabel}>Email</Text><TextInput style={s.input} value={email} onChangeText={setEmail} placeholder="ton@email.com" placeholderTextColor={Colors.textMuted} keyboardType="email-address" autoCapitalize="none" /></View>
-        <View style={s.field}><Text style={s.fieldLabel}>Mot de passe</Text><TextInput style={s.input} value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={Colors.textMuted} secureTextEntry /></View>
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>Mot de passe</Text>
+          <View style={{flexDirection:'row', alignItems:'center'}}>
+            <TextInput style={[s.input, {flex:1, marginBottom:0}]} value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={Colors.textMuted} secureTextEntry={!showPassword} autoCapitalize="none" />
+            <TouchableOpacity onPress={()=>setShowPassword(v=>!v)} style={{padding:10, marginLeft:4}} accessibilityRole="button" accessibilityLabel={showPassword?'Masquer le mot de passe':'Afficher le mot de passe'}>
+              <Ionicons name={showPassword?'eye-off-outline':'eye-outline'} size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
         {screen==='register'&&(
           <TouchableOpacity style={s.consentRow} onPress={()=>setConsentGiven(!consentGiven)} activeOpacity={0.7} accessibilityRole="checkbox" accessibilityLabel="Accepter les CGU et la politique de confidentialité" accessibilityState={{ checked: consentGiven }}>
             <View style={[s.checkbox, consentGiven&&s.checkboxChecked]}>
@@ -3904,16 +4036,18 @@ export default function App() {
           accessibilityRole="button" accessibilityLabel={screen==='login'?'Se connecter':"S'inscrire"}>
           <Text style={s.btnText}>{loading?'Chargement...':screen==='login'?'Se connecter':"S'inscrire"}</Text>
         </TouchableOpacity>
+        {screen==='login'&&(
+          <TouchableOpacity style={s.guestBtn} onPress={()=>enterGuestMode()} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel="Continuer en mode invité sans créer de compte">
+            <Ionicons name="eye-outline" size={15} color={Colors.textMuted} />
+            <Text style={s.guestBtnText}>Continuer en tant qu'invité</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={s.switchBtn} onPress={()=>setScreen(screen==='login'?'register':'login')} accessibilityRole="button" accessibilityLabel={screen==='login'?"Créer un compte":'Se connecter'}>
           <Text style={s.switchText}>{screen==='login'?"Pas de compte ? S'inscrire":'Déjà un compte ? Se connecter'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.legalFooterBtn} onPress={()=>setScreen('legal')} accessibilityRole="button" accessibilityLabel="Voir la politique de confidentialité et les CGU">
           <Ionicons name="document-text-outline" size={14} color={Colors.textMuted} />
           <Text style={s.legalFooterText}>Politique de confidentialité & CGU</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.guestBtn} onPress={()=>enterGuestMode()} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel="Continuer en mode invité sans créer de compte">
-          <Ionicons name="eye-outline" size={15} color={Colors.textMuted} />
-          <Text style={s.guestBtnText}>Continuer en tant qu'invité</Text>
         </TouchableOpacity>
       </View>
       <View style={s.authFeatures}>
@@ -4324,10 +4458,10 @@ const s = StyleSheet.create({
   miniCardTitle:     { fontSize:16, fontWeight:'900', color:Colors.text, textTransform:'uppercase', marginTop:6, marginBottom:3 },
   miniCardSub:       { fontSize:12, color:Colors.textMuted, marginBottom:3 },
   miniCardStatus:    { fontSize:12, fontWeight:'700' },
-  rateCard:          { flexDirection:'row', alignItems:'center', backgroundColor:Colors.card, borderRadius:Radius.md, padding:14, borderWidth:1, borderColor:'rgba(255,255,255,0.12)', marginBottom:8 },
+  rateCard:          { flexDirection:'row', alignItems:'center', backgroundColor:Colors.bg3, borderRadius:Radius.md, padding:14, borderWidth:1, borderColor:'rgba(255,215,0,0.2)', marginBottom:8 },
   rateCardTitle:     { fontSize:14, fontWeight:'700', color:Colors.text, textTransform:'uppercase' },
   rateCardSub:       { fontSize:12, color:Colors.textMuted, marginTop:2 },
-  rateCardCta:       { color:Colors.greenLight, fontWeight:'700', fontSize:13 },
+  rateCardCta:       { color:'#FFD700', fontWeight:'700', fontSize:13 },
 
   chatLocked:        { flex:1, alignItems:'center', justifyContent:'center', gap:12, padding:40 },
   chatLockedEmoji:   { fontSize:52 },

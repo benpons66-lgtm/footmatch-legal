@@ -58,8 +58,8 @@ eas-build-local-nodejs/
 build/
 
 # Firebase / Google Sign-In
-google-services.json
-GoogleService-Info.plist
+# google-services.json → intentionnellement inclus (repo privé, nécessaire pour EAS Build)
+# GoogleService-Info.plist → sera ajouté lors de la config iOS
 
 # Claude Code internals
 .claude/worktrees/

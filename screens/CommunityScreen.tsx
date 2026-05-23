@@ -61,8 +61,16 @@ export default function CommunityScreen({ onViewProfile }: Props) {
   const listRef                 = useRef<FlatList>(null);
   const listOpacity             = useRef(new Animated.Value(0)).current;
   const initialScrollDone       = useRef(false);
+  const pendingMessages         = useRef<Map<string, string>>(new Map());
+  const profileCache            = useRef<Map<string, string>>(new Map());
+  const usingFallback           = useRef(false);
+  const currentUserRef          = useRef(currentUser);
+  const myPseudoRef             = useRef(myPseudo);
 
-  // ── Chargement messages depuis Supabase ───────────────────────────────────
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => { myPseudoRef.current = myPseudo; }, [myPseudo]);
+
+  // ── Chargement messages + abonnement Realtime ────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -83,14 +91,86 @@ export default function CommunityScreen({ onViewProfile }: Props) {
           content:    m.content,
           created_at: m.created_at,
         }));
-        setMessages(mapped.length > 0 ? mapped : FALLBACK_MESSAGES);
+        if (mapped.length > 0) {
+          setMessages(mapped);
+          usingFallback.current = false;
+        } else {
+          setMessages(FALLBACK_MESSAGES);
+          usingFallback.current = true;
+        }
       }
 
       if (!cancelled) setLoadingMessages(false);
     }
 
     load();
-    return () => { cancelled = true; };
+
+    // Abonnement Realtime — nouveaux messages en direct
+    const channel = supabase
+      .channel('community-chat')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'community_messages' },
+        async (payload) => {
+          const row = payload.new as { id: string; user_id: string; content: string; created_at: string };
+          const me = currentUserRef.current;
+
+          // Résoudre le pseudo (cache local pour éviter N requêtes)
+          let username: string;
+          if (row.user_id === me?.id) {
+            username = myPseudoRef.current;
+          } else if (profileCache.current.has(row.user_id)) {
+            username = profileCache.current.get(row.user_id)!;
+          } else {
+            const { data } = await supabase.from('profiles').select('pseudo').eq('id', row.user_id).single();
+            username = data?.pseudo ?? 'Joueur';
+            profileCache.current.set(row.user_id, username);
+          }
+
+          const incoming: Message = {
+            id:         row.id,
+            userId:     row.user_id,
+            username,
+            content:    row.content,
+            created_at: row.created_at,
+          };
+
+          setMessages(prev => {
+            // Remplacer les messages de fallback au premier vrai message
+            if (usingFallback.current) {
+              usingFallback.current = false;
+              return [incoming];
+            }
+
+            if (row.user_id === me?.id) {
+              // Remplacer le message optimiste par la version DB
+              const idx = prev.findIndex(m => m.id.startsWith('temp-') && m.content === row.content);
+              if (idx !== -1) {
+                const updated = [...prev];
+                pendingMessages.current.delete(prev[idx].id);
+                updated[idx] = incoming;
+                return updated;
+              }
+            }
+
+            // Dédupliquer (sécurité)
+            if (prev.some(m => m.id === incoming.id)) return prev;
+
+            return [...prev, incoming];
+          });
+
+          // Scroll auto pour les messages des autres
+          if (row.user_id !== me?.id) {
+            setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // ── Envoi ──────────────────────────────────────────────────────────────────
@@ -98,15 +178,23 @@ export default function CommunityScreen({ onViewProfile }: Props) {
     const text = input.trim();
     if (!text) return;
 
+    const tempId = `temp-${Date.now()}`;
     const msg: Message = {
-      id:         Date.now().toString(),
+      id:         tempId,
       userId:     currentUser?.id,
       username:   myPseudo,
       content:    text,
       created_at: new Date().toISOString(),
     };
 
-    setMessages(prev => [...prev, msg]);
+    pendingMessages.current.set(tempId, text);
+    // Si on affichait le fallback, on le remplace par le vrai message
+    if (usingFallback.current) {
+      usingFallback.current = false;
+      setMessages([msg]);
+    } else {
+      setMessages(prev => [...prev, msg]);
+    }
     setInput('');
     Keyboard.dismiss();
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);

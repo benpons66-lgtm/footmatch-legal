@@ -89,6 +89,7 @@
       }
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "package": "fr.footmatch.app",
       "versionCode": 1,
       "targetSdkVersion": 35,
@@ -159,8 +160,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#00FF66",
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#00E676",
           "sounds": []
         }
       ]

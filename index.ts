@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { registerRootComponent } from 'expo';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 /**
  * Root component wrapping App with an ErrorBoundary.
@@ -9,7 +10,9 @@ import { ErrorBoundary } from './components/ErrorBoundary';
  * instead of a blank crash — required by Apple & Google store review.
  */
 function Root() {
-  return createElement(ErrorBoundary, null, createElement(App));
+  return createElement(SafeAreaProvider, null,
+    createElement(ErrorBoundary, null, createElement(App))
+  );
 }
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => Root);

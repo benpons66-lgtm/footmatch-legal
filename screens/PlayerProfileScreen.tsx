@@ -37,6 +37,7 @@ interface ProfileData {
   pseudo:           string;
   reputation_score: number | null;
   created_at:       string;
+  birth_date?:      string | null;
   skill?:           string | null;
   disponibilites?:  Disponibilite[] | null;
   city?:            string | null;
@@ -70,7 +71,7 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
     try {
       const { data: p } = await supabase
         .from('profiles')
-        .select('id, pseudo, reputation_score, created_at, skill, disponibilites, city, postal_code, goals, assists, instagram, tiktok')
+        .select('id, pseudo, reputation_score, created_at, birth_date, skill, disponibilites, city, postal_code, goals, assists, instagram, tiktok')
         .eq('id', playerId)
         .single();
 
@@ -122,6 +123,9 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
   const rank = getLevelFromScore(score);
   const memberSince = profile.created_at
     ? new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+    : null;
+  const age = profile.birth_date
+    ? Math.floor((Date.now() - new Date(profile.birth_date).getTime()) / (365.25 * 24 * 3600 * 1000))
     : null;
 
   function buildSocialUrl(platform: 'instagram' | 'tiktok', handle: string): string {
@@ -205,6 +209,13 @@ export default function PlayerProfileScreen({ playerId, currentUserId, isBlocked
             <View style={s.infoCardRow}>
               <Ionicons name="person-outline" size={13} color={Colors.textMuted} />
               <Text style={s.infoCardRowText}>Membre depuis {memberSince}</Text>
+            </View>
+          )}
+
+          {age !== null && (
+            <View style={s.infoCardRow}>
+              <Ionicons name="calendar-outline" size={13} color={Colors.textMuted} />
+              <Text style={s.infoCardRowText}>{age} ans</Text>
             </View>
           )}
 
