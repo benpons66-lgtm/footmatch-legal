@@ -1,6 +1,7 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# EAS Build ignore — identique à .gitignore SAUF que google-services.json
+# et GoogleService-Info.plist sont inclus (nécessaires pour le build natif)
 
-# Secrets
+# Secrets (sauf Firebase qui doit être embarqué dans le build)
 .env
 .env.local
 .env.*.local
@@ -56,10 +57,6 @@ eas-build-local-nodejs/
 
 # EAS local build output
 build/
-
-# Firebase / Google Sign-In
-google-services.json
-GoogleService-Info.plist
 
 # Claude Code internals
 .claude/worktrees/
